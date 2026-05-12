@@ -1,24 +1,36 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { Stack, Link } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
-
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+import { AppProvider } from '../context/AppContext';
+import { FontAwesome } from '@expo/vector-icons';
+import { TouchableOpacity } from 'react-native';
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
+    <AppProvider>
       <StatusBar style="auto" />
-    </ThemeProvider>
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: '#f8f9fa' },
+          headerTitleStyle: { fontWeight: 'bold' },
+          headerTintColor: '#333',
+        }}
+      >
+        <Stack.Screen 
+          name="index" 
+          options={{ 
+            title: 'Group Travels',
+            headerRight: () => (
+              <Link href={"/vendor-dashboard" as any} asChild>
+                <TouchableOpacity style={{ marginRight: 15 }}>
+                  <FontAwesome name="user-circle" size={24} color="#00b0ff" />
+                </TouchableOpacity>
+              </Link>
+            )
+          }} 
+        />
+        <Stack.Screen name="trip/[id]" options={{ title: 'Trip Details', headerBackTitle: 'Back' }} />
+        <Stack.Screen name="vendor-dashboard" options={{ title: 'Vendor Portal', presentation: 'modal' }} />
+      </Stack>
+    </AppProvider>
   );
 }
