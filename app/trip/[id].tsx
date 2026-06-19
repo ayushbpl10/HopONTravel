@@ -1,14 +1,29 @@
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Linking, Alert, Dimensions } from 'react-native';
-
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Linking, Alert, Dimensions, Modal, TextInput } from 'react-native';
 const { width } = Dimensions.get('window');
 import { useLocalSearchParams } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { useAppContext } from '../../context/AppContext';
+import { useLiveTracking } from '../../hooks/useLiveTracking';
+import MapView, { Marker } from 'react-native-maps';
+import * as Location from 'expo-location';
 
 export default function TripDetailScreen() {
   const { id } = useLocalSearchParams();
   const { trips } = useAppContext();
   const trip = trips.find((t) => t.id === id);
+  const { liveState, guestId, joinAsGuest, updateGuestLocation } = useLiveTracking(id as string);
+
+  const [isJoinModalVisible, setIsJoinModalVisible] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [isTracking, setIsTracking] = useState(false);
+  const [locationSubscription, setLocationSubscription] = useState<Location.LocationSubscription | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (locationSubscription) locationSubscription.remove();
+    };
+  }, [locationSubscription]);
 
   if (!trip) {
     return (
@@ -17,6 +32,40 @@ export default function TripDetailScreen() {
       </View>
     );
   }
+
+  const handleJoinTrip = async () => {
+    if (!guestName.trim()) {
+      Alert.alert('Required', 'Please enter your name.');
+      return;
+    }
+
+    let { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Need location permissions to share your location with the captain.');
+      return;
+    }
+
+    setIsJoinModalVisible(false);
+    
+    try {
+      const gId = await joinAsGuest(guestName);
+      
+      const initial = await Location.getCurrentPositionAsync({});
+      await updateGuestLocation(gId, guestName, { latitude: initial.coords.latitude, longitude: initial.coords.longitude, updatedAt: Date.now() });
+      
+      const sub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, distanceInterval: 100, timeInterval: 60000 },
+        (loc) => {
+          updateGuestLocation(gId, guestName, { latitude: loc.coords.latitude, longitude: loc.coords.longitude, updatedAt: Date.now() });
+        }
+      );
+      setLocationSubscription(sub);
+      setIsTracking(true);
+      Alert.alert('Joined!', 'Your location is now shared with the Captain.');
+    } catch (e) {
+      Alert.alert('Error', 'Could not join trip.');
+    }
+  };
 
   const handleWhatsAppBooking = async () => {
     const message = `Hi ${trip.vendorName}, I'm interested in booking the "${trip.title}" trip. Are there seats available?`;
@@ -27,7 +76,6 @@ export default function TripDetailScreen() {
       if (canOpen) {
         await Linking.openURL(url);
       } else {
-        // Fallback to web if app is not installed
         const webUrl = `https://wa.me/${trip.vendorWhatsApp}?text=${encodeURIComponent(message)}`;
         await Linking.openURL(webUrl);
       }
@@ -37,56 +85,129 @@ export default function TripDetailScreen() {
   };
 
   const handleUPIPayment = async () => {
-    // Generate a random 8 digit order ID
     const orderId = 'ORD' + Math.floor(10000000 + Math.random() * 90000000).toString();
-    
-    // Clean price string from '₹1500' to '1500.00'
-    const numericPrice = trip.price.replace(/[^0-9.]/g, '') + '.00';
-    
-    // Construct Raw UPI Intent URL
-    const upiUrl = `upi://pay?pa=${trip.vendorUPI}&pn=${encodeURIComponent(trip.vendorName)}&am=${numericPrice}&cu=INR&tr=${orderId}`;
+    const numericPrice = (trip.packages && trip.packages.length > 0 ? trip.packages[0].price : 0).toString() + '.00';
+    const upiUrl = `upi://pay?pa=${trip.vendorUPI[0]}&pn=${encodeURIComponent(trip.vendorName)}&am=${numericPrice}&cu=INR&tr=${orderId}`;
 
     try {
-      // Trying to open the URL directly is more robust on physical devices
       await Linking.openURL(upiUrl);
     } catch (error) {
-      Alert.alert(
-        'Could Not Open UPI App', 
-        'Please ensure you have a UPI app like GPay, PhonePe, or Paytm installed and set up on your device.'
-      );
+      Alert.alert('Could Not Open UPI App', 'Please ensure you have a UPI app installed.');
     }
   };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={styles.heroScroll}>
-        {trip.images.map((img, index) => (
-          <Image key={index} source={{ uri: img }} style={[styles.heroImage, { width }]} />
-        ))}
+        {trip.images && trip.images.length > 0 ? (
+          trip.images.map((img, index) => (
+            <Image key={index} source={{ uri: img }} style={[styles.heroImage, { width }]} />
+          ))
+        ) : (
+          <View style={[styles.heroImage, { width, backgroundColor: '#cbd5e0', justifyContent: 'center', alignItems: 'center' }]}>
+            <FontAwesome name="image" size={50} color="#a0aec0" />
+          </View>
+        )}
       </ScrollView>
       
       <View style={styles.detailsContainer}>
+        {trip.tripStatus === 'started' && (
+          <View style={styles.liveBanner}>
+            <Text style={styles.liveBannerText}>🔴 LIVE TRACKING ACTIVE</Text>
+          </View>
+        )}
+
         <View style={styles.headerRow}>
           <View style={styles.titleContainer}>
             <Text style={styles.title}>{trip.title}</Text>
-            <Text style={styles.date}>{trip.dateDuration}</Text>
+            <Text style={styles.date}>{trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : 'TBD'}</Text>
           </View>
-          <Text style={styles.price}>{trip.price}</Text>
+          <Text style={styles.price}>{trip.packages && trip.packages.length > 0 ? '₹' + trip.packages[0].price : 'TBD'}</Text>
         </View>
+
+        {/* Live Trip Section */}
+        {trip.tripStatus === 'started' && trip.crewDetails && (
+          <View style={styles.liveSection}>
+            <Text style={styles.sectionTitle}>Trip Crew & Vehicle</Text>
+            <Image source={{ uri: trip.crewDetails.vehiclePhoto }} style={styles.vehicleImage} />
+            <View style={styles.crewInfoBox}>
+              <Text style={styles.crewLabel}>Vehicle No: <Text style={styles.crewValue}>{trip.crewDetails.vehicleNumber}</Text></Text>
+              <Text style={styles.crewLabel}>Driver: <Text style={styles.crewValue}>{trip.crewDetails.driverName}</Text></Text>
+              <Text style={styles.crewLabel}>Captain: <Text style={styles.crewValue}>{trip.crewDetails.captainName}</Text></Text>
+            </View>
+
+            <Text style={styles.sectionTitle}>Live Tracking</Text>
+            <View style={styles.mapWrapper}>
+              {liveState.captain ? (
+                <MapView
+                  style={styles.map}
+                  initialRegion={{
+                    latitude: liveState.captain.latitude,
+                    longitude: liveState.captain.longitude,
+                    latitudeDelta: 0.05,
+                    longitudeDelta: 0.05,
+                  }}
+                >
+                  <Marker coordinate={liveState.captain} title="Bus / Captain">
+                    <FontAwesome name="bus" size={30} color="#00b0ff" />
+                  </Marker>
+                  
+                  {isTracking && guestId && liveState.travellers?.[guestId]?.location && (
+                    <Marker coordinate={liveState.travellers[guestId].location} title="You">
+                      <FontAwesome name="user-circle" size={24} color="#e53e3e" />
+                    </Marker>
+                  )}
+                </MapView>
+              ) : (
+                <View style={styles.mapPlaceholder}><Text>Waiting for Captain's location...</Text></View>
+              )}
+            </View>
+
+            {!isTracking ? (
+              <TouchableOpacity style={styles.joinBtn} onPress={() => setIsJoinModalVisible(true)}>
+                <Text style={styles.joinBtnText}>Join Trip & Share Location</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.trackingPill}>
+                <Text style={styles.trackingPillText}>✓ You are sharing your location</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>Total Seats</Text>
-            <Text style={styles.statValue}>{trip.totalSeats}</Text>
+            <Text style={styles.statValue}>{trip.batches ? trip.batches.reduce((acc, b) => acc + b.totalSeats, 0) : 0}</Text>
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>Available</Text>
-            <Text style={[styles.statValue, { color: '#00b0ff' }]}>{trip.totalSeats - trip.bookedSeats}</Text>
+            <Text style={[styles.statValue, { color: '#00b0ff' }]}>{trip.batches ? trip.batches.reduce((acc, b) => acc + (b.totalSeats - b.bookedSeats), 0) : 0}</Text>
           </View>
         </View>
 
         <Text style={styles.sectionTitle}>About this trip</Text>
         <Text style={styles.description}>{trip.description}</Text>
+
+        {trip.pickupPoints && trip.pickupPoints.length > 0 && (
+          <View style={styles.pickupSection}>
+            <Text style={styles.sectionTitle}>Pickup Points</Text>
+            {trip.pickupPoints.map((p, idx) => (
+              <View key={idx} style={styles.pickupItem}>
+                <FontAwesome name="map-marker" size={20} color="#e53e3e" style={{ marginRight: 15 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pickupLocation}>{p.location}</Text>
+                  <Text style={styles.pickupTime}>{p.time}</Text>
+                </View>
+                {p.mapLink && (
+                  <TouchableOpacity onPress={() => Linking.openURL(p.mapLink!)}>
+                    <FontAwesome name="external-link" size={16} color="#00b0ff" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={styles.vendorCard}>
           <FontAwesome name="user-circle" size={40} color="#cbd5e0" style={styles.vendorIcon} />
@@ -97,200 +218,109 @@ export default function TripDetailScreen() {
               <FontAwesome name="whatsapp" size={14} color="#718096" />
               <Text style={styles.vendorInfoText}>{trip.vendorWhatsApp}</Text>
             </View>
-            <View style={styles.vendorInfoRow}>
-              <FontAwesome name="bank" size={12} color="#718096" />
-              <Text style={styles.vendorInfoText}>{trip.vendorUPI}</Text>
-            </View>
           </View>
         </View>
 
         <View style={styles.buttonRow}>
-          <TouchableOpacity 
-            style={[styles.bookButton, styles.upiButton]} 
-            onPress={handleUPIPayment}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={[styles.bookButton, styles.upiButton]} onPress={handleUPIPayment}>
             <FontAwesome name="rupee" size={20} color="white" style={styles.buttonIcon} />
             <Text style={styles.bookButtonText}>Pay via UPI</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={[styles.bookButton, styles.waButton]} 
-            onPress={handleWhatsAppBooking}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={[styles.bookButton, styles.waButton]} onPress={handleWhatsAppBooking}>
             <FontAwesome name="whatsapp" size={24} color="white" style={styles.buttonIcon} />
             <Text style={styles.bookButtonText}>WhatsApp</Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Guest Join Modal */}
+      <Modal visible={isJoinModalVisible} transparent={true} animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Join Trip</Text>
+            <Text style={styles.modalDesc}>Enter your name so the Captain can locate you for pickup.</Text>
+            <TextInput 
+              style={styles.modalInput} 
+              placeholder="Your Full Name" 
+              value={guestName} 
+              onChangeText={setGuestName} 
+            />
+            <View style={styles.modalBtns}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsJoinModalVisible(false)}>
+                <Text style={{ color: '#666' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmBtn} onPress={handleJoinTrip}>
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Join</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  contentContainer: {
-    paddingBottom: 40,
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  heroScroll: {
-    height: 300,
-  },
-  heroImage: {
-    height: 300,
-    resizeMode: 'cover',
-  },
-  detailsContainer: {
-    padding: 24,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    backgroundColor: '#ffffff',
-    marginTop: -30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  titleContainer: {
-    flex: 1,
-    marginRight: 10,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1a1a1a',
-  },
-  date: {
-    fontSize: 14,
-    color: '#718096',
-    marginTop: 6,
-    fontWeight: '500',
-  },
-  price: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#00b0ff',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  statBox: {
-    flex: 1,
-    backgroundColor: '#f5f7fa',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginHorizontal: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#8a94a6',
-    textTransform: 'uppercase',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1a1a1a',
-    marginBottom: 12,
-  },
-  description: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#4a5568',
-    marginBottom: 24,
-  },
-  vendorCard: {
-    backgroundColor: '#f8f9fa',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    marginBottom: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  vendorIcon: {
-    marginRight: 15,
-  },
-  vendorLabel: {
-    fontSize: 12,
-    color: '#718096',
-    marginBottom: 2,
-  },
-  vendorName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2d3748',
-    marginBottom: 4,
-  },
-  vendorInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  vendorInfoText: {
-    fontSize: 12,
-    color: '#718096',
-    marginLeft: 6,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  bookButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 100, // Pill shape
-    elevation: 4,
-  },
-  upiButton: {
-    backgroundColor: '#00b0ff', // UPI Blue
-    shadowColor: '#00b0ff',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  waButton: {
-    backgroundColor: '#25D366', // WhatsApp Green
-    shadowColor: '#25D366',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  buttonIcon: {
-    marginRight: 8,
-  },
-  bookButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  }
+  container: { flex: 1, backgroundColor: '#ffffff' },
+  contentContainer: { paddingBottom: 40 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  heroScroll: { height: 300 },
+  heroImage: { height: 300, resizeMode: 'cover' },
+  detailsContainer: { padding: 24, borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: '#ffffff', marginTop: -30, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  liveBanner: { backgroundColor: '#fef2f2', padding: 8, borderRadius: 8, marginBottom: 15, alignItems: 'center', borderWidth: 1, borderColor: '#fca5a5' },
+  liveBannerText: { color: '#ef4444', fontWeight: 'bold' },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
+  titleContainer: { flex: 1, marginRight: 10 },
+  title: { fontSize: 28, fontWeight: '800', color: '#1a1a1a' },
+  date: { fontSize: 14, color: '#718096', marginTop: 6, fontWeight: '500' },
+  price: { fontSize: 24, fontWeight: 'bold', color: '#00b0ff' },
+  
+  liveSection: { backgroundColor: '#f8f9fa', padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#e2e8f0' },
+  vehicleImage: { width: '100%', height: 150, borderRadius: 8, marginBottom: 12 },
+  crewInfoBox: { marginBottom: 16 },
+  crewLabel: { fontSize: 14, color: '#4a5568', marginBottom: 4 },
+  crewValue: { fontWeight: 'bold', color: '#1a1a1a' },
+  mapWrapper: { height: 200, borderRadius: 8, overflow: 'hidden', marginBottom: 16 },
+  map: { flex: 1 },
+  mapPlaceholder: { flex: 1, backgroundColor: '#e2e8f0', justifyContent: 'center', alignItems: 'center' },
+  joinBtn: { backgroundColor: '#4ade80', padding: 14, borderRadius: 8, alignItems: 'center' },
+  joinBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  trackingPill: { backgroundColor: '#dcfce7', padding: 12, borderRadius: 8, alignItems: 'center' },
+  trackingPillText: { color: '#166534', fontWeight: 'bold' },
+
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
+  statBox: { flex: 1, backgroundColor: '#f5f7fa', padding: 16, borderRadius: 12, alignItems: 'center', marginHorizontal: 4 },
+  statLabel: { fontSize: 12, color: '#8a94a6', textTransform: 'uppercase', fontWeight: '600', marginBottom: 4 },
+  statValue: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  sectionTitle: { fontSize: 20, fontWeight: '700', color: '#1a1a1a', marginBottom: 12 },
+  description: { fontSize: 16, lineHeight: 24, color: '#4a5568', marginBottom: 24 },
+  
+  pickupSection: { marginBottom: 24 },
+  pickupItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8f9fa', padding: 12, borderRadius: 8, marginBottom: 8 },
+  pickupLocation: { fontSize: 16, fontWeight: '600', color: '#2d3748' },
+  pickupTime: { fontSize: 14, color: '#718096' },
+
+  vendorCard: { backgroundColor: '#f8f9fa', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 30, flexDirection: 'row', alignItems: 'center' },
+  vendorIcon: { marginRight: 15 },
+  vendorLabel: { fontSize: 12, color: '#718096', marginBottom: 2 },
+  vendorName: { fontSize: 18, fontWeight: '700', color: '#2d3748', marginBottom: 4 },
+  vendorInfoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  vendorInfoText: { fontSize: 12, color: '#718096', marginLeft: 6 },
+  buttonRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  bookButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 100, elevation: 4 },
+  upiButton: { backgroundColor: '#00b0ff', shadowColor: '#00b0ff', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  waButton: { backgroundColor: '#25D366', shadowColor: '#25D366', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  buttonIcon: { marginRight: 8 },
+  bookButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: 'white', padding: 24, borderRadius: 16 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
+  modalDesc: { color: '#666', marginBottom: 16 },
+  modalInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, marginBottom: 20, fontSize: 16 },
+  modalBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
+  cancelBtn: { padding: 12 },
+  confirmBtn: { backgroundColor: '#4ade80', padding: 12, borderRadius: 8, paddingHorizontal: 20 }
 });

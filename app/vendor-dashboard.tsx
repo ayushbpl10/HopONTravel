@@ -7,6 +7,8 @@ import { Trip } from '../data/trips';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImage } from '../utils/uploadImage';
 import OllieLoading from '../components/OllieLoading';
+import { parseWhatsAppMessage, AIProvider } from '../utils/aiParser';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 // Configuration for limits
 const LIMITS = {
@@ -31,11 +33,22 @@ export default function VendorDashboardScreen() {
   const [editTitle, setEditTitle] = useState('');
   const [editPrice, setEditPrice] = useState('₹');
   const [editDesc, setEditDesc] = useState('');
-  const [editDate, setEditDate] = useState('');
+  const [editStartDate, setEditStartDate] = useState(new Date());
+  const [editEndDate, setEditEndDate] = useState(new Date());
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [editPickupPoints, setEditPickupPoints] = useState<{location: string, time: string, mapLink?: string}[]>([]);
   const [editTotalSeats, setEditTotalSeats] = useState('20');
   const [editBookedSeats, setEditBookedSeats] = useState('0');
   const [editImages, setEditImages] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+
+  // AI Import states
+  const [isAiModalVisible, setIsAiModalVisible] = useState(false);
+  const [aiProvider, setAiProvider] = useState<AIProvider>('gemini');
+  const [apiKey, setApiKey] = useState('');
+  const [waText, setWaText] = useState('');
+  const [isParsing, setIsParsing] = useState(false);
 
   const handleLogin = async () => {
     await loginWithGoogle();
@@ -67,11 +80,16 @@ export default function VendorDashboardScreen() {
     setEditingTrip(trip);
     setIsAddingNew(false);
     setEditTitle(trip.title);
-    setEditPrice(trip.price || '₹');
+    setEditPrice(trip.packages && trip.packages.length > 0 ? trip.packages[0].price.toString() : '0');
     setEditDesc(trip.description);
-    setEditDate(trip.dateDuration);
-    setEditTotalSeats(trip.totalSeats.toString());
-    setEditBookedSeats(trip.bookedSeats.toString());
+    
+    // Parse existing date roughly, or use current date
+    setEditStartDate(new Date());
+    setEditEndDate(new Date(Date.now() + 86400000 * 2));
+    setEditPickupPoints(trip.pickupPoints || []);
+
+    setEditTotalSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].totalSeats.toString() : '0');
+    setEditBookedSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].bookedSeats.toString() : '0');
     setEditImages(trip.images || []);
   };
 
@@ -85,7 +103,9 @@ export default function VendorDashboardScreen() {
     setEditTitle('');
     setEditPrice('₹');
     setEditDesc('');
-    setEditDate('');
+    setEditStartDate(new Date());
+    setEditEndDate(new Date(Date.now() + 86400000 * 2));
+    setEditPickupPoints([]);
     setEditTotalSeats('20');
     setEditBookedSeats('0');
     setEditImages([]);
@@ -156,8 +176,8 @@ export default function VendorDashboardScreen() {
 
   const saveTrip = async () => {
     if (!editingTrip) return;
-    if (!editTitle || editPrice === '₹' || !editDate) {
-      Alert.alert('Required Fields', 'Please fill in the title, price, and dates.');
+    if (!editTitle || editPrice === '₹') {
+      Alert.alert('Required Fields', 'Please fill in the title and price.');
       return;
     }
     
@@ -176,17 +196,25 @@ export default function VendorDashboardScreen() {
         }
       }
 
+      const formattedDate = `${editStartDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${editEndDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+
       const tripData = {
         title: editTitle.trim(),
-        price: editPrice.trim(),
+        packages: [{ name: 'Base Package', price: parseInt(editPrice) || 0 }],
         description: editDesc.trim(),
-        dateDuration: editDate.trim(),
-        totalSeats: parseInt(editTotalSeats) || 0,
-        bookedSeats: parseInt(editBookedSeats) || 0,
+        batches: [{ id: Date.now().toString(), dateDuration: formattedDate, totalSeats: parseInt(editTotalSeats) || 0, bookedSeats: parseInt(editBookedSeats) || 0 }],
         images: finalImageUrls,
         vendorName: vendorProfile?.name || '',
-        vendorUPI: vendorProfile?.upiId || '',
-        vendorWhatsApp: vendorProfile?.whatsappNumber || ''
+        vendorUPI: [vendorProfile?.upiId || ''],
+        vendorWhatsApp: vendorProfile?.whatsappNumber || '',
+        addOns: [],
+        pickupPoints: editPickupPoints.filter(p => p.location.trim() && p.time.trim()),
+        itinerary: '',
+        inclusions: [],
+        exclusions: [],
+        thingsToCarry: [],
+        cancellationPolicy: [],
+        status: 'published' as const
       };
 
       if (isAddingNew) {
@@ -206,6 +234,57 @@ export default function VendorDashboardScreen() {
     }
   };
 
+  const handleAiParse = async () => {
+    if (!apiKey.trim() || !waText.trim()) {
+      Alert.alert('Error', 'Please provide both an API Key and the WhatsApp message.');
+      return;
+    }
+
+    setIsParsing(true);
+    try {
+      const parsedTrips = await parseWhatsAppMessage(waText, aiProvider, apiKey);
+      
+      if (!parsedTrips || parsedTrips.length === 0) {
+        Alert.alert('Failed', 'No trips could be extracted from the text.');
+        return;
+      }
+
+      // Save each parsed trip to the database
+      let count = 0;
+      for (const trip of parsedTrips) {
+        if (trips.length + count >= LIMITS.MAX_TRIPS_PER_VENDOR) break;
+        
+        await addTrip({
+          title: trip.title || 'Untitled Trip',
+          description: trip.description || '',
+          batches: trip.batches || [],
+          packages: trip.packages || [],
+          addOns: trip.addOns || [],
+          pickupPoints: trip.pickupPoints || [],
+          itinerary: trip.itinerary || '',
+          inclusions: trip.inclusions || [],
+          exclusions: trip.exclusions || [],
+          thingsToCarry: trip.thingsToCarry || [],
+          cancellationPolicy: trip.cancellationPolicy || [],
+          images: [],
+          vendorName: vendorProfile?.name || '',
+          vendorUPI: [vendorProfile?.upiId || ''],
+          vendorWhatsApp: vendorProfile?.whatsappNumber || '',
+          status: 'draft'
+        } as any);
+        count++;
+      }
+
+      Alert.alert('Success', `Successfully imported ${count} trip(s) as drafts!`);
+      setIsAiModalVisible(false);
+      setWaText('');
+    } catch (error: any) {
+      Alert.alert('Parsing Error', error.message || 'Failed to parse message.');
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
   const renderSupportFeedback = () => (
     <View style={styles.dashboardCard}>
       <Text style={styles.sectionTitle}>Support & Feedback</Text>
@@ -217,10 +296,10 @@ export default function VendorDashboardScreen() {
           "Please describe the issue you are facing. Logs will be attached automatically.",
           [
             { text: "Cancel", style: "cancel" },
-            { text: "Submit", onPress: async (text) => {
+            { text: "Submit", onPress: async (text: string | undefined) => {
               if (text) {
                 try {
-                  await addTrip({ title: `REPORT: ${text.substring(0, 20)}`, description: text, vendorName: vendorProfile?.name || 'Unknown', vendorWhatsApp: 'system', vendorUPI: 'system', images: [], totalSeats: 0, bookedSeats: 0, price: '0', dateDuration: 'REPORT_DO_NOT_DELETE' } as any); // Quick hack to save report to trips or a new collection
+                  await addTrip({ title: `REPORT: ${text.substring(0, 20)}`, description: text, vendorName: vendorProfile?.name || 'Unknown', vendorWhatsApp: 'system', vendorUPI: ['system'], images: [], batches: [{ id: '1', dateDuration: 'REPORT_DO_NOT_DELETE', totalSeats: 0, bookedSeats: 0 }], packages: [], addOns: [], pickupPoints: [], itinerary: '', inclusions: [], exclusions: [], thingsToCarry: [], cancellationPolicy: [], status: 'draft' } as any); // Quick hack to save report to trips or a new collection
                   Alert.alert("Sent", "Your issue has been reported to the server.");
                 } catch (e) {
                   Alert.alert("Error", "Could not send report.");
@@ -303,26 +382,48 @@ export default function VendorDashboardScreen() {
               <Text style={styles.sectionTitle}>Your Trips</Text>
               <Text style={styles.limitText}>{trips.length} / {LIMITS.MAX_TRIPS_PER_VENDOR} trips used</Text>
             </View>
-            <TouchableOpacity 
-              style={[styles.addNewBtn, trips.length >= LIMITS.MAX_TRIPS_PER_VENDOR && styles.disabledBtn]} 
-              onPress={startAddingNew}
-            >
-               <FontAwesome name="plus" size={14} color="white" />
-               <Text style={styles.addNewBtnText}>Add New</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity 
+                style={[styles.addNewBtn, { backgroundColor: '#8b5cf6' }]} 
+                onPress={() => setIsAiModalVisible(true)}
+              >
+                 <FontAwesome name="magic" size={14} color="white" />
+                 <Text style={styles.addNewBtnText}>AI Import</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.addNewBtn, trips.length >= LIMITS.MAX_TRIPS_PER_VENDOR && styles.disabledBtn]} 
+                onPress={startAddingNew}
+              >
+                 <FontAwesome name="plus" size={14} color="white" />
+                 <Text style={styles.addNewBtnText}>Add New</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           
           {trips.length === 0 ? (
             <Text style={styles.emptyText}>No trips listed yet. Click "Add New" to start!</Text>
           ) : (
             trips.map((trip) => (
-              <TouchableOpacity key={trip.id} style={styles.tripItem} onPress={() => startEditing(trip)}>
+              <TouchableOpacity 
+                key={trip.id} 
+                style={[styles.tripItem, trip.tripStatus === 'started' && { borderColor: '#4ade80', borderWidth: 2 }]} 
+                onPress={() => {
+                  if (trip.tripStatus === 'started') {
+                    router.push(`/vendor-live/${trip.id}` as any);
+                  } else {
+                    startEditing(trip);
+                  }
+                }}
+              >
                 <View style={styles.tripInfo}>
                   <Text style={styles.tripTitle}>{trip.title}</Text>
-                  <Text style={styles.tripDate}>{trip.dateDuration}</Text>
-                  <Text style={styles.tripSeats}>{trip.totalSeats - trip.bookedSeats} / {trip.totalSeats} seats available</Text>
+                  <Text style={styles.tripDate}>{trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : 'TBD'}</Text>
+                  <Text style={styles.tripSeats}>{trip.batches ? trip.batches.reduce((acc, b) => acc + (b.totalSeats - b.bookedSeats), 0) : 0} / {trip.batches ? trip.batches.reduce((acc, b) => acc + b.totalSeats, 0) : 0} seats available</Text>
+                  {trip.tripStatus === 'started' && (
+                    <Text style={{ color: '#4ade80', fontWeight: 'bold', marginTop: 4 }}>LIVE TRACKING ACTIVE</Text>
+                  )}
                 </View>
-                <FontAwesome name="edit" size={20} color="#00b0ff" />
+                <FontAwesome name={trip.tripStatus === 'started' ? "map-marker" : "edit"} size={20} color={trip.tripStatus === 'started' ? "#4ade80" : "#00b0ff"} />
               </TouchableOpacity>
             ))
           )}
@@ -362,15 +463,37 @@ export default function VendorDashboardScreen() {
                 maxLength={LIMITS.MAX_PRICE_CHARS}
               />
             </View>
+            <View style={{ flex: 1, marginRight: 10 }}>
+              <Text style={styles.label}>Start Date</Text>
+              <TouchableOpacity style={[styles.input, { justifyContent: 'center' }]} onPress={() => setShowStartDatePicker(true)}>
+                <Text>{editStartDate.toLocaleDateString('en-GB')}</Text>
+              </TouchableOpacity>
+              {showStartDatePicker && (
+                <DateTimePicker
+                  value={editStartDate}
+                  mode="date"
+                  onChange={(event, selectedDate) => {
+                    setShowStartDatePicker(false);
+                    if (selectedDate) setEditStartDate(selectedDate);
+                  }}
+                />
+              )}
+            </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Dates</Text>
-              <TextInput 
-                style={styles.input} 
-                value={editDate} 
-                onChangeText={setEditDate} 
-                placeholder="27 - 29 May" 
-                maxLength={LIMITS.MAX_DATE_CHARS}
-              />
+              <Text style={styles.label}>End Date</Text>
+              <TouchableOpacity style={[styles.input, { justifyContent: 'center' }]} onPress={() => setShowEndDatePicker(true)}>
+                <Text>{editEndDate.toLocaleDateString('en-GB')}</Text>
+              </TouchableOpacity>
+              {showEndDatePicker && (
+                <DateTimePicker
+                  value={editEndDate}
+                  mode="date"
+                  onChange={(event, selectedDate) => {
+                    setShowEndDatePicker(false);
+                    if (selectedDate) setEditEndDate(selectedDate);
+                  }}
+                />
+              )}
             </View>
           </View>
 
@@ -387,6 +510,50 @@ export default function VendorDashboardScreen() {
             placeholder="Describe the itinerary..." 
             maxLength={LIMITS.MAX_DESC_CHARS}
           />
+
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Pickup Points</Text>
+          </View>
+          {editPickupPoints.map((pt, idx) => (
+            <View key={idx} style={{ flexDirection: 'row', marginBottom: 10, gap: 10 }}>
+              <TextInput 
+                style={[styles.input, { flex: 2, marginBottom: 0 }]} 
+                placeholder="Location (e.g. Wakad)" 
+                value={pt.location} 
+                onChangeText={(text) => {
+                  const newPts = [...editPickupPoints];
+                  newPts[idx].location = text;
+                  setEditPickupPoints(newPts);
+                }} 
+              />
+              <TextInput 
+                style={[styles.input, { flex: 1, marginBottom: 0 }]} 
+                placeholder="Time (10:00 PM)" 
+                value={pt.time} 
+                onChangeText={(text) => {
+                  const newPts = [...editPickupPoints];
+                  newPts[idx].time = text;
+                  setEditPickupPoints(newPts);
+                }} 
+              />
+              <TouchableOpacity 
+                style={{ justifyContent: 'center', padding: 10 }}
+                onPress={() => {
+                  const newPts = [...editPickupPoints];
+                  newPts.splice(idx, 1);
+                  setEditPickupPoints(newPts);
+                }}
+              >
+                <FontAwesome name="trash" size={20} color="#e53e3e" />
+              </TouchableOpacity>
+            </View>
+          ))}
+          <TouchableOpacity 
+            style={{ padding: 10, alignSelf: 'flex-start', marginBottom: 15 }} 
+            onPress={() => setEditPickupPoints([...editPickupPoints, { location: '', time: '' }])}
+          >
+            <Text style={{ color: '#00b0ff', fontWeight: 'bold' }}>+ Add Pickup Point</Text>
+          </TouchableOpacity>
 
           <View style={styles.row}>
             <View style={{ flex: 1, marginRight: 10 }}>
@@ -432,6 +599,18 @@ export default function VendorDashboardScreen() {
             )}
           </TouchableOpacity>
 
+          {!isAddingNew && editingTrip?.tripStatus !== 'started' && (
+            <TouchableOpacity 
+              style={[styles.saveButton, { backgroundColor: '#4ade80', marginTop: 10 }]} 
+              onPress={() => {
+                setEditingTrip(null);
+                router.push(`/start-trip/${editingTrip!.id}` as any);
+              }}
+            >
+              <Text style={styles.saveButtonText}>Start Trip (Live Tracking)</Text>
+            </TouchableOpacity>
+          )}
+
           {!isAddingNew && (
             <TouchableOpacity 
               style={[styles.deleteButton, isUploading && styles.disabledButton]} 
@@ -443,6 +622,72 @@ export default function VendorDashboardScreen() {
             </TouchableOpacity>
           )}
         </ScrollView>
+      </Modal>
+
+      {/* AI Import Modal */}
+      <Modal visible={isAiModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.aiModalOverlay}>
+          <View style={styles.aiModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>AI WhatsApp Import</Text>
+              <TouchableOpacity onPress={() => setIsAiModalVisible(false)} disabled={isParsing}>
+                <FontAwesome name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>AI Provider</Text>
+            <View style={styles.providerToggle}>
+              <TouchableOpacity 
+                style={[styles.toggleBtn, aiProvider === 'gemini' && styles.toggleBtnActive]}
+                onPress={() => setAiProvider('gemini')}
+              >
+                <Text style={[styles.toggleBtnText, aiProvider === 'gemini' && styles.toggleBtnTextActive]}>Gemini</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.toggleBtn, aiProvider === 'openai' && styles.toggleBtnActive]}
+                onPress={() => setAiProvider('openai')}
+              >
+                <Text style={[styles.toggleBtnText, aiProvider === 'openai' && styles.toggleBtnTextActive]}>OpenAI</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={[styles.label, { marginBottom: 0 }]}>API Key</Text>
+              <TouchableOpacity onPress={() => Linking.openURL(aiProvider === 'gemini' ? 'https://aistudio.google.com/app/apikey' : 'https://platform.openai.com/api-keys')}>
+                <Text style={{ fontSize: 12, color: '#00b0ff', fontWeight: 'bold' }}>Get Key</Text>
+              </TouchableOpacity>
+            </View>
+            <TextInput 
+              style={styles.input} 
+              value={apiKey} 
+              onChangeText={setApiKey} 
+              placeholder={`Enter ${aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} API Key`} 
+              secureTextEntry 
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.label}>Paste WhatsApp Message</Text>
+            <TextInput 
+              style={[styles.input, { height: 150, textAlignVertical: 'top' }]} 
+              value={waText} 
+              onChangeText={setWaText} 
+              placeholder="Paste the raw broadcast message here..." 
+              multiline 
+            />
+
+            <TouchableOpacity 
+              style={[styles.saveButton, { backgroundColor: '#8b5cf6' }, isParsing && styles.disabledButton]} 
+              onPress={handleAiParse}
+              disabled={isParsing}
+            >
+              {isParsing ? (
+                <OllieLoading size={30} />
+              ) : (
+                <Text style={styles.saveButtonText}>Extract Trips</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       {renderSupportFeedback()}
@@ -766,5 +1011,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'white',
     fontWeight: 'bold',
+  },
+  aiModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  aiModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    minHeight: '70%',
+  },
+  providerToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 16,
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  toggleBtnActive: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toggleBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  toggleBtnTextActive: {
+    color: '#0f172a',
   }
 });

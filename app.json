@@ -20,7 +20,12 @@
         "foregroundImage": "./assets/images/app_icon.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCth5ko7XIjM4ZTL2DCwPcuTlwS29SKE_k"
+        }
+      }
     },
     "web": {
       "output": "static",
@@ -49,7 +54,8 @@
           }
         }
       ],
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

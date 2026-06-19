@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { Trip, trips as initialTrips } from '../data/trips';
+import { Trip, Rating, Booking, trips as initialTrips } from '../data/trips';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../config/firebase';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
@@ -7,12 +7,13 @@ import {
   collection, 
   onSnapshot, 
   doc, 
-  setDoc, 
+  setDoc,
   updateDoc, 
   query, 
   getDocs,
   addDoc,
-  deleteDoc
+  deleteDoc,
+  arrayUnion
 } from 'firebase/firestore';
 
 // Replace with your Web Client ID from Google Cloud Console
@@ -38,6 +39,8 @@ interface AppContextType {
   updateTrip: (tripId: string, updates: Partial<Trip>) => void;
   addTrip: (trip: Omit<Trip, 'id'>) => Promise<void>;
   deleteTrip: (tripId: string) => Promise<void>;
+  bookTrip: (booking: Omit<Booking, 'id'>) => Promise<void>;
+  submitRating: (tripId: string, rating: Rating) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -49,6 +52,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 1. Listen for Trips in Firestore
   useEffect(() => {
+    // Load offline cache first so app works without internet
+    AsyncStorage.getItem('cached_trips').then(cached => {
+      if (cached) {
+        const parsed = JSON.parse(cached) as Trip[];
+        if (parsed.length > 0) {
+          setTrips(parsed);
+          setLoading(false);
+        }
+      }
+    }).catch(() => {});
+
     const q = query(collection(db, 'trips'));
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const tripsData: Trip[] = [];
@@ -62,9 +76,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // We split by '-' and try to parse the first part.
         let isExpired = false;
         try {
-          const firstPart = trip.dateDuration.split('-')[0].trim();
-          // If the year is missing in the first part, it might fail to parse properly, 
-          // but JS Date.parse often handles it by assuming current year.
+          const firstBatchDate = trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : null;
+          const firstPart = firstBatchDate ? firstBatchDate.split('-')[0].trim() : null;
+          if (!firstPart) throw new Error('No date');
           const startDate = new Date(firstPart);
           
           if (!isNaN(startDate.getTime())) {
@@ -93,6 +107,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         seedInitialData();
       } else {
         setTrips(tripsData);
+        // Cache trips for offline use
+        AsyncStorage.setItem('cached_trips', JSON.stringify(tripsData)).catch(() => {});
         setLoading(false);
       }
     }, (error) => {
@@ -111,6 +127,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const { id, ...tripData } = trip;
         await addDoc(collection(db, 'trips'), tripData);
       }
+
     } catch (error) {
       console.error("Error seeding initial data:", error);
     } finally {
@@ -267,8 +284,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await deleteDoc(tripRef);
   };
 
+  const bookTrip = async (booking: Omit<Booking, 'id'>) => {
+    // Save booking to a separate 'bookings' collection
+    await addDoc(collection(db, 'bookings'), booking);
+    // Increment bookedSeats for the relevant batch
+    const tripRef = doc(db, 'trips', booking.tripId);
+    const tripSnap = await getDocs(query(collection(db, 'trips')));
+    const tripDoc = tripSnap.docs.find(d => d.id === booking.tripId);
+    if (tripDoc) {
+      const trip = tripDoc.data() as Trip;
+      const updatedBatches = trip.batches.map(b =>
+        b.id === booking.batchId ? { ...b, bookedSeats: b.bookedSeats + 1 } : b
+      );
+      await updateDoc(tripRef, { batches: updatedBatches });
+    }
+  };
+
+  const submitRating = async (tripId: string, rating: Rating) => {
+    const tripRef = doc(db, 'trips', tripId);
+    await updateDoc(tripRef, { ratings: arrayUnion(rating) });
+  };
+
   return (
-    <AppContext.Provider value={{ trips, loading, vendorProfile, loginWithGoogle, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip }}>
+    <AppContext.Provider value={{ trips, loading, vendorProfile, loginWithGoogle, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip, bookTrip, submitRating }}>
       {children}
     </AppContext.Provider>
   );
