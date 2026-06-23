@@ -1,23 +1,59 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, Linking, Alert, Dimensions, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert, Dimensions, Modal, TextInput } from 'react-native';
+import { Image } from 'expo-image';
 const { width } = Dimensions.get('window');
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, router } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../../context/AppContext';
 import { useLiveTracking } from '../../hooks/useLiveTracking';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { getDistance } from 'geolib';
 
 export default function TripDetailScreen() {
   const { id } = useLocalSearchParams();
-  const { trips } = useAppContext();
+  const { trips, vendorProfile, bookTrip } = useAppContext();
   const trip = trips.find((t) => t.id === id);
   const { liveState, guestId, joinAsGuest, updateGuestLocation } = useLiveTracking(id as string);
+  const { t } = useTranslation();
 
   const [isJoinModalVisible, setIsJoinModalVisible] = useState(false);
   const [guestName, setGuestName] = useState('');
   const [isTracking, setIsTracking] = useState(false);
   const [locationSubscription, setLocationSubscription] = useState<Location.LocationSubscription | null>(null);
+
+  const [selectedBatchId, setSelectedBatchId] = useState<string>('');
+  const [selectedPackageName, setSelectedPackageName] = useState<string>('');
+  const [selectedAddOns, setSelectedAddOns] = useState<string[]>([]);
+  const [seats, setSeats] = useState<number>(1);
+  const [expandedDay, setExpandedDay] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (trip) {
+      if (!selectedBatchId && trip.batches && trip.batches.length > 0) setSelectedBatchId(trip.batches[0].id);
+      if (!selectedPackageName && trip.packages && trip.packages.length > 0) setSelectedPackageName(trip.packages[0].name);
+    }
+  }, [trip]);
+
+  // Derive total price
+  const basePrice = trip?.packages?.find(p => p.name === selectedPackageName)?.price || 0;
+  const addOnsPrice = selectedAddOns.reduce((total, addonName) => {
+    const addon = trip?.addOns?.find(a => a.name === addonName);
+    return total + (addon?.price || 0);
+  }, 0);
+  const totalPrice = (basePrice + addOnsPrice) * seats;
+
+  let etaMins = 0;
+  let distanceKm = 0;
+  if (isTracking && guestId && liveState.captain && liveState.travellers?.[guestId]?.location) {
+    const distMeters = getDistance(
+      { latitude: liveState.captain.latitude, longitude: liveState.captain.longitude },
+      { latitude: liveState.travellers[guestId].location.latitude, longitude: liveState.travellers[guestId].location.longitude }
+    );
+    distanceKm = distMeters / 1000;
+    etaMins = Math.round((distanceKm / 40) * 60);
+  }
 
   useEffect(() => {
     return () => {
@@ -68,7 +104,8 @@ export default function TripDetailScreen() {
   };
 
   const handleWhatsAppBooking = async () => {
-    const message = `Hi ${trip.vendorName}, I'm interested in booking the "${trip.title}" trip. Are there seats available?`;
+    const orderId = 'WA' + Math.floor(10000000 + Math.random() * 90000000).toString();
+    const message = `Hi ${trip.vendorName}, I want to book "${trip.title}"\nBatch: ${trip.batches?.find(b=>b.id===selectedBatchId)?.dateDuration}\nPackage: ${selectedPackageName}\nAdd-ons: ${selectedAddOns.join(', ') || 'None'}\nSeats: ${seats}\nTotal: ₹${totalPrice}`;
     const url = `whatsapp://send?phone=${trip.vendorWhatsApp}&text=${encodeURIComponent(message)}`;
     
     try {
@@ -79,6 +116,33 @@ export default function TripDetailScreen() {
         const webUrl = `https://wa.me/${trip.vendorWhatsApp}?text=${encodeURIComponent(message)}`;
         await Linking.openURL(webUrl);
       }
+      
+      if (vendorProfile) {
+        await bookTrip({
+          tripId: trip.id,
+          batchId: selectedBatchId,
+          packageName: selectedPackageName,
+          travelerName: vendorProfile.name,
+          travelerPhone: vendorProfile.whatsappNumber || '',
+          totalPrice,
+          addOns: selectedAddOns,
+          status: 'pending',
+          createdAt: Date.now(),
+          userId: vendorProfile.id,
+        } as any);
+      }
+      
+      router.replace({
+        pathname: '/booking-confirmation' as any,
+        params: {
+          tripTitle: trip.title,
+          tripDate: trip.batches?.find(b => b.id === selectedBatchId)?.dateDuration || 'TBD',
+          seats: seats.toString(),
+          totalPrice: totalPrice.toString(),
+          bookingId: orderId,
+          packageName: selectedPackageName
+        }
+      });
     } catch (error) {
       Alert.alert('Error', 'Could not open WhatsApp.');
     }
@@ -86,11 +150,49 @@ export default function TripDetailScreen() {
 
   const handleUPIPayment = async () => {
     const orderId = 'ORD' + Math.floor(10000000 + Math.random() * 90000000).toString();
-    const numericPrice = (trip.packages && trip.packages.length > 0 ? trip.packages[0].price : 0).toString() + '.00';
-    const upiUrl = `upi://pay?pa=${trip.vendorUPI[0]}&pn=${encodeURIComponent(trip.vendorName)}&am=${numericPrice}&cu=INR&tr=${orderId}`;
+    const upiUrl = `upi://pay?pa=${trip.vendorUPI[0]}&pn=${encodeURIComponent(trip.vendorName)}&am=${totalPrice}.00&cu=INR&tr=${orderId}`;
 
     try {
       await Linking.openURL(upiUrl);
+      
+      Alert.alert(
+        'Payment Initiated',
+        'Your booking is marked as "Pending Verification". The vendor will verify your UPI payment and confirm your seat shortly.',
+        [
+          {
+            text: 'OK',
+            onPress: async () => {
+              if (vendorProfile) {
+                await bookTrip({
+                  tripId: trip.id,
+                  batchId: selectedBatchId,
+                  packageName: selectedPackageName,
+                  travelerName: vendorProfile.name,
+                  travelerPhone: vendorProfile.whatsappNumber || '',
+                  totalPrice,
+                  addOns: selectedAddOns,
+                  status: 'pending',
+                  createdAt: Date.now(),
+                  userId: vendorProfile.id,
+                } as any);
+              }
+              
+              router.replace({
+                pathname: '/booking-confirmation' as any,
+                params: {
+                  tripTitle: trip.title,
+                  tripDate: trip.batches?.find(b => b.id === selectedBatchId)?.dateDuration || 'TBD',
+                  seats: seats.toString(),
+                  totalPrice: totalPrice.toString(),
+                  bookingId: orderId,
+                  packageName: selectedPackageName,
+                  paymentStatus: 'pending'
+                }
+              });
+            }
+          }
+        ]
+      );
     } catch (error) {
       Alert.alert('Could Not Open UPI App', 'Please ensure you have a UPI app installed.');
     }
@@ -122,21 +224,25 @@ export default function TripDetailScreen() {
             <Text style={styles.title}>{trip.title}</Text>
             <Text style={styles.date}>{trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : 'TBD'}</Text>
           </View>
-          <Text style={styles.price}>{trip.packages && trip.packages.length > 0 ? '₹' + trip.packages[0].price : 'TBD'}</Text>
+          <Text style={styles.price}>₹{basePrice}</Text>
         </View>
 
         {/* Live Trip Section */}
-        {trip.tripStatus === 'started' && trip.crewDetails && (
+        {trip.tripStatus === 'started' && (
           <View style={styles.liveSection}>
-            <Text style={styles.sectionTitle}>Trip Crew & Vehicle</Text>
-            <Image source={{ uri: trip.crewDetails.vehiclePhoto }} style={styles.vehicleImage} />
-            <View style={styles.crewInfoBox}>
-              <Text style={styles.crewLabel}>Vehicle No: <Text style={styles.crewValue}>{trip.crewDetails.vehicleNumber}</Text></Text>
-              <Text style={styles.crewLabel}>Driver: <Text style={styles.crewValue}>{trip.crewDetails.driverName}</Text></Text>
-              <Text style={styles.crewLabel}>Captain: <Text style={styles.crewValue}>{trip.crewDetails.captainName}</Text></Text>
-            </View>
+            {trip.crewDetails && (
+              <>
+                <Text style={styles.sectionTitle}>Trip Crew & Vehicle</Text>
+                {trip.crewDetails.vehiclePhoto ? <Image source={{ uri: trip.crewDetails.vehiclePhoto }} style={styles.vehicleImage} /> : null}
+                <View style={styles.crewInfoBox}>
+                  <Text style={styles.crewLabel}>Vehicle No: <Text style={styles.crewValue}>{trip.crewDetails.vehicleNumber}</Text></Text>
+                  <Text style={styles.crewLabel}>Driver: <Text style={styles.crewValue}>{trip.crewDetails.driverName}</Text></Text>
+                  <Text style={styles.crewLabel}>Captain: <Text style={styles.crewValue}>{trip.crewDetails.captainName}</Text></Text>
+                </View>
+              </>
+            )}
 
-            <Text style={styles.sectionTitle}>Live Tracking</Text>
+            <Text style={styles.sectionTitle}>{t('tripDetails.liveTracking', 'Live Tracking')}</Text>
             <View style={styles.mapWrapper}>
               {liveState.captain ? (
                 <MapView
@@ -165,11 +271,16 @@ export default function TripDetailScreen() {
 
             {!isTracking ? (
               <TouchableOpacity style={styles.joinBtn} onPress={() => setIsJoinModalVisible(true)}>
-                <Text style={styles.joinBtnText}>Join Trip & Share Location</Text>
+                <Text style={styles.joinBtnText}>{t('tripDetails.joinTrip', 'Join Trip & Share Location')}</Text>
               </TouchableOpacity>
             ) : (
               <View style={styles.trackingPill}>
                 <Text style={styles.trackingPillText}>✓ You are sharing your location</Text>
+                {etaMins > 0 && (
+                  <Text style={{color: 'white', marginTop: 4, fontWeight: 'bold', textAlign: 'center'}}>
+                    Bus is ~{distanceKm.toFixed(1)} km away. ETA: {etaMins} mins
+                  </Text>
+                )}
               </View>
             )}
           </View>
@@ -186,12 +297,67 @@ export default function TripDetailScreen() {
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>About this trip</Text>
+        <Text style={styles.sectionTitle}>{t('tripDetails.aboutTrip', 'About this trip')}</Text>
         <Text style={styles.description}>{trip.description}</Text>
+
+        {/* Inclusions & Exclusions */}
+        {((trip.inclusions && trip.inclusions.length > 0) || (trip.exclusions && trip.exclusions.length > 0)) && (
+          <View style={styles.incExcContainer}>
+            {trip.inclusions && trip.inclusions.length > 0 && (
+              <View style={styles.incList}>
+                <Text style={styles.sectionTitle}>{t('tripDetails.inclusions', 'Inclusions')}</Text>
+                {trip.inclusions.map((item, i) => (
+                  <View key={i} style={styles.listItem}>
+                    <FontAwesome name="check-circle" size={16} color="#22c55e" style={styles.listIcon} />
+                    <Text style={styles.listText}>{item}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {trip.exclusions && trip.exclusions.length > 0 && (
+              <View style={styles.excList}>
+                <Text style={styles.sectionTitle}>{t('tripDetails.exclusions', 'Exclusions')}</Text>
+                {trip.exclusions.map((item, i) => (
+                  <View key={i} style={styles.listItem}>
+                    <FontAwesome name="times-circle" size={16} color="#ef4444" style={styles.listIcon} />
+                    <Text style={styles.listText}>{item}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Itinerary */}
+        {trip.itinerary ? (
+          <View style={styles.itinerarySection}>
+            <Text style={styles.sectionTitle}>{t('tripDetails.itinerary', 'Itinerary')}</Text>
+            {trip.itinerary.split('Day ').filter((d: string) => d.trim() !== '').map((dayText: string, i: number) => {
+              const lines = dayText.trim().split('\n');
+              const dayTitle = 'Day ' + lines[0];
+              const dayDetails = lines.slice(1).join('\n');
+              const isExpanded = expandedDay === i;
+              
+              return (
+                <View key={i} style={styles.itineraryCard}>
+                  <TouchableOpacity style={styles.itineraryHeader} onPress={() => setExpandedDay(isExpanded ? null : i)}>
+                    <Text style={styles.itineraryDay}>{dayTitle}</Text>
+                    <FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={14} color="#718096" />
+                  </TouchableOpacity>
+                  {isExpanded && (
+                    <View style={styles.itineraryContent}>
+                      <Text style={styles.itineraryText}>{dayDetails}</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
 
         {trip.pickupPoints && trip.pickupPoints.length > 0 && (
           <View style={styles.pickupSection}>
-            <Text style={styles.sectionTitle}>Pickup Points</Text>
+            <Text style={styles.sectionTitle}>{t('tripDetails.pickupPoints', 'Pickup Points')}</Text>
             {trip.pickupPoints.map((p, idx) => (
               <View key={idx} style={styles.pickupItem}>
                 <FontAwesome name="map-marker" size={20} color="#e53e3e" style={{ marginRight: 15 }} />
@@ -221,16 +387,108 @@ export default function TripDetailScreen() {
           </View>
         </View>
 
+        {/* Booking Selection (Batch, Package, Addons) */}
+        <View style={styles.bookingSelectionSection}>
+          <Text style={styles.sectionTitle}>{t('tripDetails.customizeTrip', 'Customize Your Trip')}</Text>
+          
+          {trip.batches && trip.batches.length > 0 && (
+            <>
+              <Text style={styles.selectionLabel}>{t('tripDetails.selectDate', 'Select Date')}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectionScroll}>
+                {trip.batches.map(b => (
+                  <TouchableOpacity 
+                    key={b.id} 
+                    style={[styles.chip, selectedBatchId === b.id && styles.chipActive]}
+                    onPress={() => setSelectedBatchId(b.id)}
+                  >
+                    <Text style={[styles.chipText, selectedBatchId === b.id && styles.chipTextActive]}>{b.dateDuration}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          )}
+
+          {trip.packages && trip.packages.length > 0 && (
+            <>
+              <Text style={styles.selectionLabel}>{t('tripDetails.selectPackage', 'Select Package')}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectionScroll}>
+                {trip.packages.map((p, i) => (
+                  <TouchableOpacity 
+                    key={i} 
+                    style={[styles.chip, selectedPackageName === p.name && styles.chipActive]}
+                    onPress={() => setSelectedPackageName(p.name)}
+                  >
+                    <Text style={[styles.chipText, selectedPackageName === p.name && styles.chipTextActive]}>{p.name} (₹{p.price})</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          )}
+
+          {trip.addOns && trip.addOns.length > 0 && (
+            <>
+              <Text style={styles.selectionLabel}>Add-Ons (Optional)</Text>
+              {trip.addOns.map((addon, i) => {
+                const isSelected = selectedAddOns.includes(addon.name);
+                return (
+                  <TouchableOpacity 
+                    key={i} 
+                    style={[styles.addonRow, isSelected && styles.addonRowActive]}
+                    onPress={() => {
+                      if (isSelected) {
+                        setSelectedAddOns(selectedAddOns.filter(a => a !== addon.name));
+                      } else {
+                        setSelectedAddOns([...selectedAddOns, addon.name]);
+                      }
+                    }}
+                  >
+                    <View style={[styles.addonCheck, isSelected && styles.addonCheckActive]}>
+                      {isSelected && <FontAwesome name="check" size={12} color="#fff" />}
+                    </View>
+                    <Text style={styles.addonName}>{addon.name}</Text>
+                    <Text style={styles.addonPrice}>+₹{addon.price}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
+
+          <View style={styles.seatsRow}>
+            <Text style={styles.selectionLabel}>Number of Seats</Text>
+            <View style={styles.stepper}>
+              <TouchableOpacity style={styles.stepBtn} onPress={() => setSeats(Math.max(1, seats - 1))}>
+                <FontAwesome name="minus" size={16} color="#00b0ff" />
+              </TouchableOpacity>
+              <Text style={styles.stepValue}>{seats}</Text>
+              <TouchableOpacity style={styles.stepBtn} onPress={() => setSeats(seats + 1)}>
+                <FontAwesome name="plus" size={16} color="#00b0ff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.totalBox}>
+          <Text style={styles.totalBoxLabel}>{t('tripDetails.total', 'Total Price')}</Text>
+          <Text style={styles.totalBoxValue}>₹{totalPrice}</Text>
+        </View>
+
         <View style={styles.buttonRow}>
           <TouchableOpacity style={[styles.bookButton, styles.upiButton]} onPress={handleUPIPayment}>
             <FontAwesome name="rupee" size={20} color="white" style={styles.buttonIcon} />
-            <Text style={styles.bookButtonText}>Pay via UPI</Text>
+            <Text style={styles.bookButtonText}>{t('tripDetails.payViaUPI', 'Pay via UPI')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.bookButton, styles.waButton]} onPress={handleWhatsAppBooking}>
             <FontAwesome name="whatsapp" size={24} color="white" style={styles.buttonIcon} />
-            <Text style={styles.bookButtonText}>WhatsApp</Text>
+            <Text style={styles.bookButtonText}>{t('tripDetails.whatsapp', 'WhatsApp')}</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 15, padding: 10, backgroundColor: '#fff3cd', borderRadius: 8, borderWidth: 1, borderColor: '#ffeeba'}}>
+          <FontAwesome name="info-circle" size={16} color="#856404" style={{marginRight: 10}} />
+          <Text style={{flex: 1, fontSize: 12, color: '#856404', lineHeight: 18}}>
+            {t('tripDetails.manualConfirmHelp', 'Help: As UPI payments do not have automated callbacks, your booking will be marked as Pending. The vendor will manually verify your payment and confirm your seat.')}
+          </Text>
         </View>
       </View>
 
@@ -322,5 +580,42 @@ const styles = StyleSheet.create({
   modalInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, marginBottom: 20, fontSize: 16 },
   modalBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
   cancelBtn: { padding: 12 },
-  confirmBtn: { backgroundColor: '#4ade80', padding: 12, borderRadius: 8, paddingHorizontal: 20 }
+  confirmBtn: { backgroundColor: '#4ade80', padding: 12, borderRadius: 8, paddingHorizontal: 20 },
+
+  // New UI section styles
+  incExcContainer: { marginBottom: 24 },
+  incList: { marginBottom: 16 },
+  excList: { marginBottom: 8 },
+  listItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
+  listIcon: { marginRight: 10, marginTop: 2 },
+  listText: { fontSize: 15, color: '#4a5568', flex: 1, lineHeight: 22 },
+
+  itinerarySection: { marginBottom: 24 },
+  itineraryCard: { backgroundColor: '#f8f9fa', borderRadius: 8, marginBottom: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#e2e8f0' },
+  itineraryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#fff' },
+  itineraryDay: { fontSize: 16, fontWeight: '700', color: '#2d3748' },
+  itineraryContent: { padding: 16, paddingTop: 0, backgroundColor: '#fff' },
+  itineraryText: { fontSize: 15, color: '#4a5568', lineHeight: 24 },
+
+  bookingSelectionSection: { backgroundColor: '#f8f9fa', padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#e2e8f0' },
+  selectionLabel: { fontSize: 14, fontWeight: '700', color: '#4a5568', marginBottom: 8, marginTop: 12 },
+  selectionScroll: { marginBottom: 12, paddingBottom: 4 },
+  chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 100, backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e0', marginRight: 10 },
+  chipActive: { backgroundColor: '#00b0ff', borderColor: '#00b0ff' },
+  chipText: { fontSize: 14, color: '#4a5568', fontWeight: '500' },
+  chipTextActive: { color: '#fff', fontWeight: '700' },
+  addonRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: '#e2e8f0' },
+  addonRowActive: { borderColor: '#00b0ff', backgroundColor: '#e0f7ff' },
+  addonCheck: { width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: '#cbd5e0', marginRight: 12, justifyContent: 'center', alignItems: 'center' },
+  addonCheckActive: { backgroundColor: '#00b0ff', borderColor: '#00b0ff' },
+  addonName: { flex: 1, fontSize: 15, color: '#2d3748', fontWeight: '500' },
+  addonPrice: { fontSize: 15, fontWeight: '700', color: '#00b0ff' },
+  seatsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 },
+  stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 100, borderWidth: 1, borderColor: '#cbd5e0' },
+  stepBtn: { padding: 10, paddingHorizontal: 16 },
+  stepValue: { fontSize: 18, fontWeight: '700', color: '#1a1a1a', minWidth: 24, textAlign: 'center' },
+
+  totalBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1a202c', padding: 16, borderRadius: 12, marginBottom: 24 },
+  totalBoxLabel: { fontSize: 16, color: '#a0aec0', fontWeight: '600' },
+  totalBoxValue: { fontSize: 24, fontWeight: '800', color: '#fff' }
 });

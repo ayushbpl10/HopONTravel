@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, Image, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useAppContext } from '../../context/AppContext';
 import * as ImagePicker from 'expo-image-picker';

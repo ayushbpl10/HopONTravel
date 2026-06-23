@@ -48,7 +48,9 @@ export const useLiveTracking = (tripId: string) => {
     // Create initial entry without location yet
     const liveRef = doc(db, 'live_trips', tripId);
     await setDoc(liveRef, { 
-      [`travellers.${id}`]: { id, name, location: null } 
+      travellers: {
+        [id]: { id, name, location: null }
+      }
     }, { merge: true });
     
     return id;
@@ -57,7 +59,9 @@ export const useLiveTracking = (tripId: string) => {
   const updateGuestLocation = async (id: string, name: string, location: LiveLocation) => {
     const liveRef = doc(db, 'live_trips', tripId);
     await setDoc(liveRef, { 
-      [`travellers.${id}`]: { id, name, location } 
+      travellers: {
+        [id]: { id, name, location }
+      }
     }, { merge: true });
   };
 

@@ -3,6 +3,41 @@ import { Trip, Rating, Booking, trips as initialTrips } from '../data/trips';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../config/firebase';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import * as Device from 'expo-device';
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+async function registerForPushNotificationsAsync() {
+  let token;
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  }
+
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') return undefined;
+    token = (await Notifications.getExpoPushTokenAsync()).data;
+  }
+  return token;
+}
 import { 
   collection, 
   onSnapshot, 
@@ -13,7 +48,11 @@ import {
   getDocs,
   addDoc,
   deleteDoc,
-  arrayUnion
+  arrayUnion,
+  limit,
+  startAfter,
+  DocumentData,
+  QueryDocumentSnapshot
 } from 'firebase/firestore';
 
 // Replace with your Web Client ID from Google Cloud Console
@@ -27,6 +66,7 @@ interface VendorProfile {
   name: string;
   upiId: string;
   whatsappNumber: string;
+  pushToken?: string;
 }
 
 interface AppContextType {
@@ -41,6 +81,9 @@ interface AppContextType {
   deleteTrip: (tripId: string) => Promise<void>;
   bookTrip: (booking: Omit<Booking, 'id'>) => Promise<void>;
   submitRating: (tripId: string, rating: Rating) => Promise<void>;
+  fetchMoreTrips: () => Promise<void>;
+  hasMoreTrips: boolean;
+  refreshTrips: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -50,9 +93,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loading, setLoading] = useState(true);
   const [vendorProfile, setVendorProfile] = useState<VendorProfile | null>(null);
 
-  // 1. Listen for Trips in Firestore
+  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMoreTrips, setHasMoreTrips] = useState(true);
+
+  // 1. Initial Load of Trips (Paginated)
+  const loadInitialTrips = async () => {
+    try {
+      const q = query(collection(db, 'trips'), limit(10));
+      const querySnapshot = await getDocs(q);
+      
+      const tripsData: Trip[] = [];
+      querySnapshot.forEach((docSnap) => {
+        tripsData.push({ id: docSnap.id, ...docSnap.data() } as Trip);
+      });
+
+      if (tripsData.length === 0 && initialTrips.length > 0) {
+        await seedInitialData();
+        return;
+      }
+      
+      setTrips(tripsData);
+      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1]);
+      setHasMoreTrips(querySnapshot.docs.length === 10);
+      AsyncStorage.setItem('cached_trips', JSON.stringify(tripsData)).catch(() => {});
+      setLoading(false);
+    } catch (error) {
+      console.error("Error loading trips:", error);
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // Load offline cache first so app works without internet
+    // Load offline cache first
     AsyncStorage.getItem('cached_trips').then(cached => {
       if (cached) {
         const parsed = JSON.parse(cached) as Trip[];
@@ -63,61 +135,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }).catch(() => {});
 
-    const q = query(collection(db, 'trips'));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const tripsData: Trip[] = [];
-      const now = new Date();
-      
-      querySnapshot.forEach((docSnap) => {
-        const trip = { id: docSnap.id, ...docSnap.data() } as Trip;
-        
-        // --- Client-Side Cron: Delete if 7 days older than start date ---
-        // Attempt to parse start date. Usually format is "27 - 29 May 2026". 
-        // We split by '-' and try to parse the first part.
-        let isExpired = false;
-        try {
-          const firstBatchDate = trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : null;
-          const firstPart = firstBatchDate ? firstBatchDate.split('-')[0].trim() : null;
-          if (!firstPart) throw new Error('No date');
-          const startDate = new Date(firstPart);
-          
-          if (!isNaN(startDate.getTime())) {
-            const diffTime = Math.abs(now.getTime() - startDate.getTime());
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-            
-            // If it's more than 7 days past the start date, delete it.
-            if (now > startDate && diffDays > 7) {
-              isExpired = true;
-              console.log(`Cron: Deleting expired trip: ${trip.title}`);
-              deleteDoc(doc(db, 'trips', trip.id)).catch(console.error);
-              // In a real app, you'd also delete images from Storage here
-            }
-          }
-        } catch (e) {
-          console.error('Cron error parsing date', e);
-        }
-
-        if (!isExpired) {
-          tripsData.push(trip);
-        }
-      });
-      
-      // If Firestore is empty, seed it with our initial data
-      if (tripsData.length === 0 && initialTrips.length > 0) {
-        seedInitialData();
-      } else {
-        setTrips(tripsData);
-        // Cache trips for offline use
-        AsyncStorage.setItem('cached_trips', JSON.stringify(tripsData)).catch(() => {});
-        setLoading(false);
-      }
-    }, (error) => {
-      console.error("Error listening to trips:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    loadInitialTrips();
   }, []);
+
+  const refreshTrips = async () => {
+    setLoading(true);
+    await loadInitialTrips();
+  };
+
+  const fetchMoreTrips = async () => {
+    if (!lastVisible || !hasMoreTrips) return;
+    
+    try {
+      const q = query(collection(db, 'trips'), startAfter(lastVisible), limit(10));
+      const querySnapshot = await getDocs(q);
+      
+      const tripsData: Trip[] = [];
+      querySnapshot.forEach((docSnap) => {
+        tripsData.push({ id: docSnap.id, ...docSnap.data() } as Trip);
+      });
+
+      if (tripsData.length > 0) {
+        setTrips(prev => [...prev, ...tripsData]);
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1]);
+        setHasMoreTrips(querySnapshot.docs.length === 10);
+      } else {
+        setHasMoreTrips(false);
+      }
+    } catch (error) {
+      console.error("Error fetching more trips:", error);
+    }
+  };
 
   const seedInitialData = async () => {
     setLoading(true);
@@ -187,16 +235,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let existingVendor = querySnapshot.docs.find(doc => doc.data().email === email);
 
       let profile: VendorProfile;
+      let pushToken = '';
+      try {
+        pushToken = await registerForPushNotificationsAsync() || '';
+      } catch (e) {}
 
       if (existingVendor) {
         profile = { id: existingVendor.id, ...existingVendor.data() } as VendorProfile;
+        if (pushToken && profile.pushToken !== pushToken) {
+          await updateDoc(doc(db, 'vendors', existingVendor.id), { pushToken });
+          profile.pushToken = pushToken;
+        }
       } else {
         // Create new vendor in Firestore
         const newVendorData = {
           email,
           name,
           upiId: 'merchant@bank',
-          whatsappNumber: '+911234567890'
+          whatsappNumber: '+911234567890',
+          pushToken
         };
         const docRef = await addDoc(collection(db, 'vendors'), newVendorData);
         profile = { id: docRef.id, ...newVendorData };
@@ -297,6 +354,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         b.id === booking.batchId ? { ...b, bookedSeats: b.bookedSeats + 1 } : b
       );
       await updateDoc(tripRef, { batches: updatedBatches });
+
+      // Send Push Notification to Vendor
+      try {
+        const { where } = await import('firebase/firestore');
+        const vendorQ = query(collection(db, 'vendors'), where('whatsappNumber', '==', trip.vendorWhatsApp));
+        const vendorSnap = await getDocs(vendorQ);
+        if (!vendorSnap.empty) {
+          const vData = vendorSnap.docs[0].data();
+          if (vData.pushToken) {
+            await fetch('https://exp.host/--/api/v2/push/send', {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json',
+                'Accept-encoding': 'gzip, deflate',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                to: vData.pushToken,
+                sound: 'default',
+                title: 'New Booking! 🎉',
+                body: `${booking.travelerName} just booked a package for ${trip.title}.`,
+              }),
+            });
+          }
+        }
+      } catch (e) {
+        console.error("Failed to send push notification", e);
+      }
     }
   };
 
@@ -306,7 +391,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   return (
-    <AppContext.Provider value={{ trips, loading, vendorProfile, loginWithGoogle, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip, bookTrip, submitRating }}>
+    <AppContext.Provider value={{ trips, loading, vendorProfile, loginWithGoogle, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip, bookTrip, submitRating, fetchMoreTrips, hasMoreTrips, refreshTrips }}>
       {children}
     </AppContext.Provider>
   );

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, Modal, Image, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, Modal, ActivityIndicator, Linking } from 'react-native';
+import { Image } from 'expo-image';
 import { useAppContext } from '../context/AppContext';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -9,6 +10,7 @@ import { uploadImage } from '../utils/uploadImage';
 import OllieLoading from '../components/OllieLoading';
 import { parseWhatsAppMessage, AIProvider } from '../utils/aiParser';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useTranslation } from 'react-i18next';
 
 // Configuration for limits
 const LIMITS = {
@@ -28,6 +30,7 @@ export default function VendorDashboardScreen() {
   const [nameInput, setNameInput] = useState(vendorProfile?.name || '');
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
+  const { t } = useTranslation();
   
   // Edit/Add form states
   const [editTitle, setEditTitle] = useState('');
@@ -42,6 +45,7 @@ export default function VendorDashboardScreen() {
   const [editBookedSeats, setEditBookedSeats] = useState('0');
   const [editImages, setEditImages] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [showTimePickerForIdx, setShowTimePickerForIdx] = useState<number | null>(null);
 
   // AI Import states
   const [isAiModalVisible, setIsAiModalVisible] = useState(false);
@@ -90,7 +94,7 @@ export default function VendorDashboardScreen() {
 
     setEditTotalSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].totalSeats.toString() : '0');
     setEditBookedSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].bookedSeats.toString() : '0');
-    setEditImages(trip.images || []);
+    setEditImages((trip.images || []).filter(img => img && typeof img === 'string' && img.trim() !== ''));
   };
 
   const startAddingNew = () => {
@@ -205,6 +209,7 @@ export default function VendorDashboardScreen() {
         batches: [{ id: Date.now().toString(), dateDuration: formattedDate, totalSeats: parseInt(editTotalSeats) || 0, bookedSeats: parseInt(editBookedSeats) || 0 }],
         images: finalImageUrls,
         vendorName: vendorProfile?.name || '',
+        vendorId: vendorProfile?.id || '',
         vendorUPI: [vendorProfile?.upiId || ''],
         vendorWhatsApp: vendorProfile?.whatsappNumber || '',
         addOns: [],
@@ -268,6 +273,7 @@ export default function VendorDashboardScreen() {
           cancellationPolicy: trip.cancellationPolicy || [],
           images: [],
           vendorName: vendorProfile?.name || '',
+          vendorId: vendorProfile?.id || '',
           vendorUPI: [vendorProfile?.upiId || ''],
           vendorWhatsApp: vendorProfile?.whatsappNumber || '',
           status: 'draft'
@@ -299,7 +305,7 @@ export default function VendorDashboardScreen() {
             { text: "Submit", onPress: async (text: string | undefined) => {
               if (text) {
                 try {
-                  await addTrip({ title: `REPORT: ${text.substring(0, 20)}`, description: text, vendorName: vendorProfile?.name || 'Unknown', vendorWhatsApp: 'system', vendorUPI: ['system'], images: [], batches: [{ id: '1', dateDuration: 'REPORT_DO_NOT_DELETE', totalSeats: 0, bookedSeats: 0 }], packages: [], addOns: [], pickupPoints: [], itinerary: '', inclusions: [], exclusions: [], thingsToCarry: [], cancellationPolicy: [], status: 'draft' } as any); // Quick hack to save report to trips or a new collection
+                  await addTrip({ title: `REPORT: ${text.substring(0, 20)}`, description: text, vendorName: vendorProfile?.name || 'Unknown', vendorId: vendorProfile?.id || 'Unknown', vendorWhatsApp: 'system', vendorUPI: ['system'], images: [], batches: [{ id: '1', dateDuration: 'REPORT_DO_NOT_DELETE', totalSeats: 0, bookedSeats: 0 }], packages: [], addOns: [], pickupPoints: [], itinerary: '', inclusions: [], exclusions: [], thingsToCarry: [], cancellationPolicy: [], status: 'draft' } as any); // Quick hack to save report to trips or a new collection
                   Alert.alert("Sent", "Your issue has been reported to the server.");
                 } catch (e) {
                   Alert.alert("Error", "Could not send report.");
@@ -332,12 +338,12 @@ export default function VendorDashboardScreen() {
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer}>
         <View style={[styles.loginCard, { marginBottom: 20 }]}>
           <FontAwesome name="google" size={48} color="#DB4437" style={styles.googleIcon} />
-          <Text style={styles.title}>Vendor Portal</Text>
-          <Text style={styles.subtitle}>Sign in with Google to manage your trips and payment settings.</Text>
+          <Text style={styles.title}>{t('vendor.loginTitle', 'Vendor Portal')}</Text>
+          <Text style={styles.subtitle}>{t('vendor.loginSubtitle', 'Sign in with Google to manage your trips and payment settings.')}</Text>
           
           <TouchableOpacity style={styles.googleButton} onPress={handleLogin}>
             <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
-            <Text style={styles.googleButtonText}>Sign in with Google</Text>
+            <Text style={styles.googleButtonText}>{t('vendor.signInWithGoogle', 'Sign in with Google')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -351,12 +357,38 @@ export default function VendorDashboardScreen() {
       <View style={styles.dashboardCard}>
         <View style={styles.dashboardHeader}>
           <View>
-            <Text style={styles.welcomeText}>Welcome, {vendorProfile.name}</Text>
+            <Text style={styles.welcomeText}>{t('vendor.welcome', 'Welcome')}, {vendorProfile.name}</Text>
             <Text style={styles.emailText}>{vendorProfile.email}</Text>
+            {(() => {
+              const myTrips = trips.filter(t => t.vendorName === vendorProfile?.name);
+              let totalRating = 0;
+              let totalReviews = 0;
+              myTrips.forEach(t => {
+                t.ratings?.forEach(r => {
+                  totalRating += r.stars;
+                  totalReviews += 1;
+                });
+              });
+              if (totalReviews === 0) return null;
+              const avgRating = (totalRating / totalReviews).toFixed(1);
+              return (
+                <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 6}}>
+                  <FontAwesome name="star" color="#f59e0b" size={14} />
+                  <Text style={{marginLeft: 4, fontWeight: 'bold', color: '#4a5568', fontSize: 13}}>
+                    {avgRating} ({totalReviews} reviews)
+                  </Text>
+                </View>
+              );
+            })()}
           </View>
-          <TouchableOpacity style={styles.logoutSmall} onPress={handleLogout}>
-             <FontAwesome name="sign-out" size={20} color="#e53e3e" />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 15, alignItems: 'center' }}>
+            <TouchableOpacity onPress={() => router.push('/my-bookings' as any)}>
+               <FontAwesome name="ticket" size={24} color="#00b0ff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.logoutSmall} onPress={handleLogout}>
+               <FontAwesome name="sign-out" size={20} color="#e53e3e" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -372,14 +404,14 @@ export default function VendorDashboardScreen() {
           <TextInput style={styles.input} value={upiInput} onChangeText={setUpiInput} placeholder="e.g., mybusiness@okicici" autoCapitalize="none" maxLength={50} />
 
           <TouchableOpacity style={styles.saveButton} onPress={handleUpdateProfile}>
-            <Text style={styles.saveButtonText}>Update Profile</Text>
+            <Text style={styles.saveButtonText}>{t('vendor.updateProfile', 'Update Profile')}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <View>
-              <Text style={styles.sectionTitle}>Your Trips</Text>
+              <Text style={styles.sectionTitle}>{t('vendor.yourTrips', 'Your Trips')}</Text>
               <Text style={styles.limitText}>{trips.length} / {LIMITS.MAX_TRIPS_PER_VENDOR} trips used</Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -388,14 +420,14 @@ export default function VendorDashboardScreen() {
                 onPress={() => setIsAiModalVisible(true)}
               >
                  <FontAwesome name="magic" size={14} color="white" />
-                 <Text style={styles.addNewBtnText}>AI Import</Text>
+                 <Text style={styles.addNewBtnText}>{t('vendor.aiImport', 'AI Import')}</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.addNewBtn, trips.length >= LIMITS.MAX_TRIPS_PER_VENDOR && styles.disabledBtn]} 
                 onPress={startAddingNew}
               >
                  <FontAwesome name="plus" size={14} color="white" />
-                 <Text style={styles.addNewBtnText}>Add New</Text>
+                 <Text style={styles.addNewBtnText}>{t('vendor.addNewTrip', 'Add New')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -421,6 +453,18 @@ export default function VendorDashboardScreen() {
                   <Text style={styles.tripSeats}>{trip.batches ? trip.batches.reduce((acc, b) => acc + (b.totalSeats - b.bookedSeats), 0) : 0} / {trip.batches ? trip.batches.reduce((acc, b) => acc + b.totalSeats, 0) : 0} seats available</Text>
                   {trip.tripStatus === 'started' && (
                     <Text style={{ color: '#4ade80', fontWeight: 'bold', marginTop: 4 }}>LIVE TRACKING ACTIVE</Text>
+                  )}
+                  {trip.tripStatus !== 'started' && (
+                    <TouchableOpacity 
+                      style={{ marginTop: 8, paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#4ade80', borderRadius: 6, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center' }} 
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        router.push(`/start-trip/${trip.id}` as any);
+                      }}
+                    >
+                      <FontAwesome name="play" size={10} color="white" style={{ marginRight: 6 }} />
+                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Start Live Tracking</Text>
+                    </TouchableOpacity>
                   )}
                 </View>
                 <FontAwesome name={trip.tripStatus === 'started' ? "map-marker" : "edit"} size={20} color={trip.tripStatus === 'started' ? "#4ade80" : "#00b0ff"} />
@@ -464,7 +508,7 @@ export default function VendorDashboardScreen() {
               />
             </View>
             <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={styles.label}>Start Date</Text>
+              <Text style={styles.label}>{t('vendor.startDate', 'Start Date')}</Text>
               <TouchableOpacity style={[styles.input, { justifyContent: 'center' }]} onPress={() => setShowStartDatePicker(true)}>
                 <Text>{editStartDate.toLocaleDateString('en-GB')}</Text>
               </TouchableOpacity>
@@ -480,7 +524,7 @@ export default function VendorDashboardScreen() {
               )}
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>End Date</Text>
+              <Text style={styles.label}>{t('vendor.endDate', 'End Date')}</Text>
               <TouchableOpacity style={[styles.input, { justifyContent: 'center' }]} onPress={() => setShowEndDatePicker(true)}>
                 <Text>{editEndDate.toLocaleDateString('en-GB')}</Text>
               </TouchableOpacity>
@@ -498,7 +542,7 @@ export default function VendorDashboardScreen() {
           </View>
 
           <View style={styles.labelRow}>
-            <Text style={styles.label}>Description</Text>
+            <Text style={styles.label}>{t('vendor.description', 'Description')}</Text>
             <Text style={styles.charCount}>{editDesc.length}/{LIMITS.MAX_DESC_CHARS}</Text>
           </View>
           <TextInput 
@@ -507,78 +551,112 @@ export default function VendorDashboardScreen() {
             onChangeText={setEditDesc} 
             multiline 
             numberOfLines={4} 
-            placeholder="Describe the itinerary..." 
+            placeholder={t('vendor.descPlaceholder', 'Describe the itinerary...')} 
             maxLength={LIMITS.MAX_DESC_CHARS}
           />
 
           <View style={styles.labelRow}>
-            <Text style={styles.label}>Pickup Points</Text>
+            <Text style={styles.label}>{t('vendor.pickupPoints', 'Pickup Points')}</Text>
           </View>
           {editPickupPoints.map((pt, idx) => (
-            <View key={idx} style={{ flexDirection: 'row', marginBottom: 10, gap: 10 }}>
+            <View key={idx} style={{ marginBottom: 15, padding: 10, backgroundColor: '#f8f9fa', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' }}>
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                <TextInput 
+                  style={[styles.input, { flex: 2, marginBottom: 0 }]} 
+                  placeholder="Location (e.g. Wakad)" 
+                  value={pt.location} 
+                  onChangeText={(text) => {
+                    const newPts = [...editPickupPoints];
+                    newPts[idx].location = text;
+                    setEditPickupPoints(newPts);
+                  }} 
+                />
+                <TouchableOpacity 
+                  style={[styles.input, { flex: 1, marginBottom: 0, justifyContent: 'center' }]} 
+                  onPress={() => setShowTimePickerForIdx(idx)}
+                >
+                  <Text style={{ color: pt.time ? '#2d3748' : '#a0aec0' }}>{pt.time || 'Set Time'}</Text>
+                </TouchableOpacity>
+                {showTimePickerForIdx === idx && (
+                  <DateTimePicker
+                    value={pt.time ? (() => { 
+                      const d = new Date(); 
+                      const parts = pt.time.match(/(\d+):(\d+) (AM|PM)/); 
+                      if(parts) { 
+                        d.setHours((parseInt(parts[1]) % 12) + (parts[3]==='PM'?12:0)); 
+                        d.setMinutes(parseInt(parts[2])); 
+                      } 
+                      return d; 
+                    })() : new Date()}
+                    mode="time"
+                    onChange={(event, selectedDate) => {
+                      setShowTimePickerForIdx(null);
+                      if (selectedDate) {
+                        const timeStr = selectedDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        const newPts = [...editPickupPoints];
+                        newPts[idx].time = timeStr;
+                        setEditPickupPoints(newPts);
+                      }
+                    }}
+                  />
+                )}
+                <TouchableOpacity 
+                  style={{ justifyContent: 'center', padding: 5 }}
+                  onPress={() => {
+                    const newPts = [...editPickupPoints];
+                    newPts.splice(idx, 1);
+                    setEditPickupPoints(newPts);
+                  }}
+                >
+                  <FontAwesome name="trash" size={20} color="#e53e3e" />
+                </TouchableOpacity>
+              </View>
               <TextInput 
-                style={[styles.input, { flex: 2, marginBottom: 0 }]} 
-                placeholder="Location (e.g. Wakad)" 
-                value={pt.location} 
+                style={[styles.input, { marginBottom: 0 }]} 
+                placeholder="Google Maps Link (Optional)" 
+                value={pt.mapLink || ''} 
                 onChangeText={(text) => {
                   const newPts = [...editPickupPoints];
-                  newPts[idx].location = text;
+                  newPts[idx].mapLink = text;
                   setEditPickupPoints(newPts);
                 }} 
               />
-              <TextInput 
-                style={[styles.input, { flex: 1, marginBottom: 0 }]} 
-                placeholder="Time (10:00 PM)" 
-                value={pt.time} 
-                onChangeText={(text) => {
-                  const newPts = [...editPickupPoints];
-                  newPts[idx].time = text;
-                  setEditPickupPoints(newPts);
-                }} 
-              />
-              <TouchableOpacity 
-                style={{ justifyContent: 'center', padding: 10 }}
-                onPress={() => {
-                  const newPts = [...editPickupPoints];
-                  newPts.splice(idx, 1);
-                  setEditPickupPoints(newPts);
-                }}
-              >
-                <FontAwesome name="trash" size={20} color="#e53e3e" />
-              </TouchableOpacity>
             </View>
           ))}
           <TouchableOpacity 
             style={{ padding: 10, alignSelf: 'flex-start', marginBottom: 15 }} 
             onPress={() => setEditPickupPoints([...editPickupPoints, { location: '', time: '' }])}
           >
-            <Text style={{ color: '#00b0ff', fontWeight: 'bold' }}>+ Add Pickup Point</Text>
+            <Text style={{ color: '#00b0ff', fontWeight: 'bold' }}>+ {t('vendor.addPickup', 'Add Pickup Point')}</Text>
           </TouchableOpacity>
 
           <View style={styles.row}>
             <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={styles.label}>Total Seats</Text>
+              <Text style={styles.label}>{t('vendor.totalSeats', 'Total Seats')}</Text>
               <TextInput style={styles.input} value={editTotalSeats} onChangeText={setEditTotalSeats} keyboardType="numeric" maxLength={3} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Booked Seats</Text>
+              <Text style={styles.label}>{t('vendor.bookedSeats', 'Booked Seats')}</Text>
               <TextInput style={styles.input} value={editBookedSeats} onChangeText={setEditBookedSeats} keyboardType="numeric" maxLength={3} />
             </View>
           </View>
 
           <View style={styles.labelRow}>
-            <Text style={styles.label}>Trip Images ({editImages.length}/{LIMITS.MAX_IMAGES_PER_TRIP})</Text>
-            <Text style={styles.hintText}>Max {LIMITS.MAX_IMAGE_SIZE_MB}MB each</Text>
+            <Text style={styles.label}>{t('vendor.tripImages', 'Trip Images')} ({editImages.length}/{LIMITS.MAX_IMAGES_PER_TRIP})</Text>
+            <Text style={styles.hintText}>Max {LIMITS.MAX_IMAGE_SIZE_MB}MB</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll}>
-            {editImages.map((uri, index) => (
-              <View key={index} style={styles.imagePreviewContainer}>
-                <Image source={{ uri }} style={styles.imagePreview} />
-                <TouchableOpacity style={styles.removeImageBtn} onPress={() => removeImage(index)}>
-                  <FontAwesome name="times-circle" size={20} color="#e53e3e" />
-                </TouchableOpacity>
-              </View>
-            ))}
+            {editImages.map((uri, index) => {
+              if (!uri) return null;
+              return (
+                <View key={index} style={styles.imagePreviewContainer}>
+                  <Image source={{ uri }} style={styles.imagePreview} />
+                  <TouchableOpacity style={styles.removeImageBtn} onPress={() => removeImage(index)}>
+                    <FontAwesome name="times-circle" size={20} color="#e53e3e" />
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
             {editImages.length < LIMITS.MAX_IMAGES_PER_TRIP && (
               <TouchableOpacity style={styles.addImageBtn} onPress={pickImage}>
                 <FontAwesome name="plus" size={24} color="#00b0ff" />
@@ -595,21 +673,10 @@ export default function VendorDashboardScreen() {
             {isUploading ? (
               <OllieLoading size={30} />
             ) : (
-              <Text style={styles.saveButtonText}>{isAddingNew ? 'List Trip' : 'Save Changes'}</Text>
+              <Text style={styles.saveButtonText}>{isAddingNew ? t('vendor.listTrip', 'List Trip') : t('vendor.saveChanges', 'Save Changes')}</Text>
             )}
           </TouchableOpacity>
 
-          {!isAddingNew && editingTrip?.tripStatus !== 'started' && (
-            <TouchableOpacity 
-              style={[styles.saveButton, { backgroundColor: '#4ade80', marginTop: 10 }]} 
-              onPress={() => {
-                setEditingTrip(null);
-                router.push(`/start-trip/${editingTrip!.id}` as any);
-              }}
-            >
-              <Text style={styles.saveButtonText}>Start Trip (Live Tracking)</Text>
-            </TouchableOpacity>
-          )}
 
           {!isAddingNew && (
             <TouchableOpacity 
@@ -618,7 +685,7 @@ export default function VendorDashboardScreen() {
               disabled={isUploading}
             >
               <FontAwesome name="trash" size={16} color="#e53e3e" />
-              <Text style={styles.deleteButtonText}>Delete Trip Listing</Text>
+              <Text style={styles.deleteButtonText}>{t('vendor.deleteTrip', 'Delete Trip Listing')}</Text>
             </TouchableOpacity>
           )}
         </ScrollView>
@@ -629,13 +696,13 @@ export default function VendorDashboardScreen() {
         <View style={styles.aiModalOverlay}>
           <View style={styles.aiModalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>AI WhatsApp Import</Text>
+              <Text style={styles.modalTitle}>{t('vendor.aiImportTitle', 'AI WhatsApp Import')}</Text>
               <TouchableOpacity onPress={() => setIsAiModalVisible(false)} disabled={isParsing}>
                 <FontAwesome name="close" size={24} color="#333" />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>AI Provider</Text>
+            <Text style={styles.label}>{t('vendor.aiProvider', 'AI Provider')}</Text>
             <View style={styles.providerToggle}>
               <TouchableOpacity 
                 style={[styles.toggleBtn, aiProvider === 'gemini' && styles.toggleBtnActive]}
@@ -652,9 +719,9 @@ export default function VendorDashboardScreen() {
             </View>
 
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <Text style={[styles.label, { marginBottom: 0 }]}>API Key</Text>
+              <Text style={[styles.label, { marginBottom: 0 }]}>{t('vendor.apiKey', 'API Key')}</Text>
               <TouchableOpacity onPress={() => Linking.openURL(aiProvider === 'gemini' ? 'https://aistudio.google.com/app/apikey' : 'https://platform.openai.com/api-keys')}>
-                <Text style={{ fontSize: 12, color: '#00b0ff', fontWeight: 'bold' }}>Get Key</Text>
+                <Text style={{ fontSize: 12, color: '#00b0ff', fontWeight: 'bold' }}>{t('vendor.getKey', 'Get Key')}</Text>
               </TouchableOpacity>
             </View>
             <TextInput 
@@ -665,13 +732,20 @@ export default function VendorDashboardScreen() {
               secureTextEntry 
               autoCapitalize="none"
             />
+            
+            <View style={{flexDirection: 'row', alignItems: 'flex-start', marginBottom: 15, padding: 10, backgroundColor: '#e6f6ff', borderRadius: 8}}>
+              <FontAwesome name="info-circle" size={16} color="#00b0ff" style={{marginRight: 10, marginTop: 2}} />
+              <Text style={{flex: 1, fontSize: 12, color: '#4a5568', lineHeight: 18}}>
+                {t('vendor.apiKeyHelp', 'Help: To use AI Import, you need a free API key. Click "Get Key", sign in, generate a key, and paste it here. Your key is only used locally and never stored on our servers.')}
+              </Text>
+            </View>
 
-            <Text style={styles.label}>Paste WhatsApp Message</Text>
+            <Text style={styles.label}>{t('vendor.pasteWa', 'Paste WhatsApp Message')}</Text>
             <TextInput 
               style={[styles.input, { height: 150, textAlignVertical: 'top' }]} 
               value={waText} 
               onChangeText={setWaText} 
-              placeholder="Paste the raw broadcast message here..." 
+              placeholder={t('vendor.pasteWaPlaceholder', 'Paste the raw broadcast message here...')} 
               multiline 
             />
 
@@ -681,9 +755,12 @@ export default function VendorDashboardScreen() {
               disabled={isParsing}
             >
               {isParsing ? (
-                <OllieLoading size={30} />
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <OllieLoading size={30} />
+                  <Text style={[styles.saveButtonText, { marginLeft: 10 }]}>{t('vendor.parsing', 'Parsing with AI...')}</Text>
+                </View>
               ) : (
-                <Text style={styles.saveButtonText}>Extract Trips</Text>
+                <Text style={styles.saveButtonText}>{t('vendor.parseAndImport', 'Parse & Import')}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -1014,6 +1091,8 @@ const styles = StyleSheet.create({
   },
   aiModalOverlay: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },

@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { FlatList, StyleSheet, Text, View, ImageBackground, TouchableOpacity, TextInput, ScrollView } from 'react-native';
+import { FlatList, StyleSheet, Text, View, ImageBackground, TouchableOpacity, TextInput, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { Link } from 'expo-router';
 import { useAppContext } from '../context/AppContext';
 import { FontAwesome } from '@expo/vector-icons';
 import OllieLoading from '../components/OllieLoading';
+import { useTranslation } from 'react-i18next';
 
 const PRICE_FILTERS = [
   { label: 'All', max: Infinity },
@@ -13,7 +14,15 @@ const PRICE_FILTERS = [
 ];
 
 export default function HomeScreen() {
-  const { trips, loading } = useAppContext();
+  const { trips, loading, fetchMoreTrips, hasMoreTrips, refreshTrips } = useAppContext();
+  const [refreshing, setRefreshing] = useState(false);
+  const { t } = useTranslation();
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    if (refreshTrips) await refreshTrips();
+    setRefreshing(false);
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState(0);
 
@@ -32,7 +41,7 @@ export default function HomeScreen() {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <OllieLoading size={120} />
-        <Text style={{ marginTop: 20, color: '#8a94a6', fontWeight: '600' }}>Fetching Adventures...</Text>
+        <Text style={{ marginTop: 20, color: '#8a94a6', fontWeight: '600' }}>{t('common.loading')}</Text>
       </View>
     );
   }
@@ -44,7 +53,7 @@ export default function HomeScreen() {
         <FontAwesome name="search" size={18} color="#8a94a6" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search trips, destinations..."
+          placeholder={t('explore.searchPlaceholder')}
           value={searchQuery}
           onChangeText={setSearchQuery}
           autoCapitalize="none"
@@ -71,6 +80,18 @@ export default function HomeScreen() {
         data={filteredTrips}
         keyExtractor={(item) => item.id}
         contentContainerStyle={filteredTrips.length === 0 ? styles.emptyContainer : styles.listContainer}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        onEndReached={() => {
+          if (fetchMoreTrips && hasMoreTrips) fetchMoreTrips();
+        }}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          filteredTrips.length > 0 ? (
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              {hasMoreTrips ? <ActivityIndicator size="small" color="#00b0ff" /> : <Text style={{ color: '#a0aec0' }}>{t('explore.endOfList', "You've reached the end")}</Text>}
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => {
           const price = item.packages && item.packages.length > 0 ? item.packages[0].price : null;
           const available = item.batches ? item.batches.reduce((acc, b) => acc + (b.totalSeats - b.bookedSeats), 0) : 0;

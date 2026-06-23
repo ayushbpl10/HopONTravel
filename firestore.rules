@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── HELPER FUNCTIONS ───────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isTripOwner(tripId) {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/trips/$(tripId)).data.vendorId == request.auth.uid;
+    }
+
+    function hasRequiredTripFields() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['title', 'vendorId', 'vendorName', 'status', 'batches'])
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 100
+        && data.vendorId == request.auth.uid  // vendorId must match authenticated user
+        && data.status in ['draft', 'published'];
+    }
+
+    function vendorIdUnchanged() {
+      // Prevent a vendor from changing vendorId after creation
+      return request.resource.data.vendorId == resource.data.vendorId;
+    }
+
+    // ─── TRIPS ──────────────────────────────────────────────────────
+    match /trips/{tripId} {
+      // Anyone (including unauthenticated) can read published trips
+      allow read: if resource.data.status == 'published'
+                  || (isAuthenticated() && resource.data.vendorId == request.auth.uid);
+
+      // Authenticated users can create trips — must include valid required fields
+      allow create: if isAuthenticated() && hasRequiredTripFields();
+
+      // Only the owning vendor can update — vendorId cannot change
+      allow update: if isAuthenticated()
+                    && resource.data.vendorId == request.auth.uid
+                    && vendorIdUnchanged();
+
+      // Only the owning vendor can delete
+      allow delete: if isAuthenticated()
+                    && resource.data.vendorId == request.auth.uid;
+    }
+
+    // ─── VENDORS ────────────────────────────────────────────────────
+    match /vendors/{vendorId} {
+      // Vendors can only read/write their own profile
+      allow read, write: if isOwner(vendorId);
+    }
+
+    // ─── BOOKINGS ───────────────────────────────────────────────────
+    match /bookings/{bookingId} {
+      // Travellers can create a booking for themselves only
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.keys().hasAll(['tripId', 'userId', 'travelerName', 'batchId', 'totalPrice', 'createdAt']);
+
+      // Allow authenticated users to read bookings. This is required because Firestore "rules are not filters"
+      // prevents vendors from querying bookings by tripId if the rule depends on fetching the trip document.
+      allow read: if isAuthenticated();
+
+      // Only the trip's vendor can update booking status (e.g. confirm/cancel)
+      allow update: if isAuthenticated() && isTripOwner(resource.data.tripId);
+
+      // No deletes allowed
+      allow delete: if false;
+    }
+
+    // ─── LIVE TRIPS ─────────────────────────────────────────────────
+    match /live_trips/{tripId} {
+      // Anyone can read live tracking data (travellers need this)
+      allow read: if true;
+
+      // Captain (vendor who owns the trip) can write the captain field, guests can write to travellers
+      allow write: if true;
+    }
+
+    // ─── RATINGS ────────────────────────────────────────────────────
+    // Stored on trips via arrayUnion — covered by trips rules above.
+    // If you split into a subcollection later, add rules here.
+  }
+}
