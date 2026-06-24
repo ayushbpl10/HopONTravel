@@ -18,10 +18,21 @@ const resources = {
 };
 
 const initI18n = async () => {
-  let savedLanguage = await AsyncStorage.getItem(LANGUAGE_KEY);
+  let savedLanguage: string | null = null;
+
+  if (typeof window !== 'undefined') {
+    try {
+      savedLanguage = await AsyncStorage.getItem(LANGUAGE_KEY);
+    } catch (e) {}
+  }
 
   if (!savedLanguage) {
-    const deviceLocale = Localization.getLocales()[0]?.languageCode || 'en';
+    let deviceLocale = 'en';
+    if (typeof window !== 'undefined') {
+      try {
+        deviceLocale = Localization.getLocales()[0]?.languageCode || 'en';
+      } catch (e) {}
+    }
     savedLanguage = Object.keys(resources).includes(deviceLocale) ? deviceLocale : 'en';
   }
 

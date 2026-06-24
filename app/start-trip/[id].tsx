@@ -58,7 +58,7 @@ export default function StartTripScreen() {
           captainPhone: captainPhone || 'Not Provided',
           driverName: driverName || 'Not Provided',
           vehicleNumber: vehicleNumber || 'Not Provided',
-          vehiclePhoto: photoUrl || 'https://via.placeholder.com/400x200.png?text=No+Vehicle+Photo'
+          vehiclePhoto: photoUrl || 'https://placehold.co/400x200/png?text=No+Vehicle+Photo'
         }
       });
 

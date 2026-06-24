@@ -1,11 +1,12 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { Trip, Rating, Booking, trips as initialTrips } from '../data/trips';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db } from '../config/firebase';
+import { db, auth } from '../config/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -56,9 +57,11 @@ import {
 } from 'firebase/firestore';
 
 // Replace with your Web Client ID from Google Cloud Console
-GoogleSignin.configure({
-  webClientId: '264459863602-lfns732opcfoi2ardm5qddarsd6e4kb1.apps.googleusercontent.com',
-});
+if (Platform.OS !== 'web') {
+  GoogleSignin.configure({
+    webClientId: '264459863602-lfns732opcfoi2ardm5qddarsd6e4kb1.apps.googleusercontent.com',
+  });
+}
 
 interface VendorProfile {
   id: string; 
@@ -74,12 +77,14 @@ interface AppContextType {
   loading: boolean;
   vendorProfile: VendorProfile | null;
   loginWithGoogle: () => Promise<void>;
+  mockVendorLogin: () => Promise<void>;
   logout: () => Promise<void>;
   updateVendorProfile: (updates: Partial<VendorProfile>) => void;
   updateTrip: (tripId: string, updates: Partial<Trip>) => void;
   addTrip: (trip: Omit<Trip, 'id'>) => Promise<void>;
   deleteTrip: (tripId: string) => Promise<void>;
   bookTrip: (booking: Omit<Booking, 'id'>) => Promise<void>;
+  updateBookingStatus: (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled') => Promise<void>;
   submitRating: (tripId: string, rating: Rating) => Promise<void>;
   fetchMoreTrips: () => Promise<void>;
   hasMoreTrips: boolean;
@@ -109,6 +114,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (tripsData.length === 0 && initialTrips.length > 0) {
         await seedInitialData();
+        // After seeding, fetch again so the skeleton loader doesn't loop forever!
+        const q2 = query(collection(db, 'trips'), limit(10));
+        const querySnapshot2 = await getDocs(q2);
+        const tripsData2: Trip[] = [];
+        querySnapshot2.forEach((docSnap) => {
+          tripsData2.push({ id: docSnap.id, ...docSnap.data() } as Trip);
+        });
+        setTrips(tripsData2);
+        if (querySnapshot2.docs.length > 0) {
+          setLastVisible(querySnapshot2.docs[querySnapshot2.docs.length - 1]);
+        }
+        setHasMoreTrips(querySnapshot2.docs.length === 10);
+        AsyncStorage.setItem('cached_trips', JSON.stringify(tripsData2)).catch(() => {});
+        setLoading(false);
         return;
       }
       
@@ -283,12 +302,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error('Failed to log error to Firestore', logError);
       }
 
-      import('react-native').then(({ Alert }) => {
-        Alert.alert(
-          'Login Failed', 
-          `Could not connect to Google.\nError: ${error.message || 'Unknown'}\n\nA diagnostic log has been sent to the server.`
-        );
-      });
+      Alert.alert(
+        'Login Failed', 
+        `Could not connect to Google.\nError: ${error.message || 'Unknown'}\n\nA diagnostic log has been sent to the server.`
+      );
+    }
+  };
+
+  const mockVendorLogin = async () => {
+    try {
+      if (Platform.OS === 'web') {
+        try {
+          await signInAnonymously(auth);
+        } catch (e) {
+          console.log('Anonymous sign-in failed, continuing with local mock:', e);
+        }
+      }
+
+      const email = 'dev@hopontravel.com';
+      const name = 'Dev Vendor';
+      
+      const q = query(collection(db, 'vendors'));
+      const querySnapshot = await getDocs(q);
+      let existingVendor = querySnapshot.docs.find(doc => doc.data().email === email);
+
+      let profile: VendorProfile;
+
+      if (existingVendor) {
+        profile = { id: existingVendor.id, ...existingVendor.data() } as VendorProfile;
+      } else {
+        const newVendorRef = await addDoc(collection(db, 'vendors'), {
+          email,
+          name,
+          upiId: '',
+          whatsappNumber: '',
+          pushToken: ''
+        });
+        profile = { id: newVendorRef.id, email, name, upiId: '', whatsappNumber: '' };
+      }
+
+      await AsyncStorage.setItem('vendorProfile', JSON.stringify(profile));
+      setVendorProfile(profile);
+      Alert.alert('Dev Login', 'Successfully mocked login on Web!');
+    } catch (e) {
+      Alert.alert('Error', 'Mock login failed.');
     }
   };
 
@@ -385,13 +442,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateBookingStatus = async (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled') => {
+    const bookingRef = doc(db, 'bookings', bookingId);
+    await updateDoc(bookingRef, { status });
+  };
+
   const submitRating = async (tripId: string, rating: Rating) => {
     const tripRef = doc(db, 'trips', tripId);
     await updateDoc(tripRef, { ratings: arrayUnion(rating) });
   };
 
   return (
-    <AppContext.Provider value={{ trips, loading, vendorProfile, loginWithGoogle, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip, bookTrip, submitRating, fetchMoreTrips, hasMoreTrips, refreshTrips }}>
+    <AppContext.Provider value={{ trips, loading, vendorProfile, loginWithGoogle, mockVendorLogin, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, submitRating, fetchMoreTrips, hasMoreTrips, refreshTrips }}>
       {children}
     </AppContext.Provider>
   );

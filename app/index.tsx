@@ -1,17 +1,74 @@
-import React, { useState, useMemo } from 'react';
-import { FlatList, StyleSheet, Text, View, ImageBackground, TouchableOpacity, TextInput, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
-import { Link } from 'expo-router';
+import React, { useState, useMemo, useRef } from 'react';
+import { FlatList, StyleSheet, Text, View, ImageBackground, TouchableOpacity, TextInput, ScrollView, RefreshControl, ActivityIndicator, Animated } from 'react-native';
+import { Link, router } from 'expo-router';
 import { useAppContext } from '../context/AppContext';
 import { FontAwesome } from '@expo/vector-icons';
-import OllieLoading from '../components/OllieLoading';
+import { Skeleton } from '../components/Skeleton';
 import { useTranslation } from 'react-i18next';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const PRICE_FILTERS = [
-  { label: 'All', max: Infinity },
-  { label: 'Under ₹1000', max: 1000 },
-  { label: '₹1000–₹2000', min: 1000, max: 2000 },
-  { label: 'Above ₹2000', min: 2000, max: Infinity },
+  { labelKey: 'explore.filterAll', defaultLabel: 'All', max: Infinity },
+  { labelKey: 'explore.filterUnder1000', defaultLabel: 'Under ₹1000', max: 1000 },
+  { labelKey: 'explore.filter1000To2000', defaultLabel: '₹1000–₹2000', min: 1000, max: 2000 },
+  { labelKey: 'explore.filterAbove2000', defaultLabel: 'Above ₹2000', min: 2000, max: Infinity },
 ];
+
+const AnimatedCard = ({ trip, t }: { trip: any, t: any }) => {
+  const scale = useRef(new Animated.Value(1)).current;
+  const price = trip.packages && trip.packages.length > 0 ? trip.packages[0].price : null;
+  const available = trip.batches ? trip.batches.reduce((acc: number, b: any) => acc + (b.totalSeats - b.bookedSeats), 0) : 0;
+
+  return (
+    <Link href={`/trip/${trip.id}`} asChild>
+      <TouchableOpacity 
+        activeOpacity={0.9}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.96, useNativeDriver: false }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: false }).start()}
+      >
+        <Animated.View style={[styles.cardContainer, { transform: [{ scale }] }]}>
+          <ImageBackground
+            source={{ uri: trip.images[0] || 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&q=80' }}
+            style={styles.cardImage}
+            imageStyle={{ borderRadius: 20 }}
+          >
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.85)']}
+              style={styles.overlay}
+            >
+              <View style={styles.titleContainer}>
+                {trip.tripStatus === 'started' && (
+                  <BlurView intensity={80} tint="dark" style={styles.liveBadge}>
+                    <Text style={styles.liveBadgeText}>🔴 {t('explore.live', 'LIVE')}</Text>
+                  </BlurView>
+                )}
+                {trip.tripStatus === 'completed' && (
+                  <BlurView intensity={80} tint="dark" style={styles.liveBadge}>
+                    <Text style={styles.liveBadgeText}>✓ {t('explore.completed', 'Completed')}</Text>
+                  </BlurView>
+                )}
+                <Text style={styles.title}>{trip.title}</Text>
+                <Text style={styles.date}>{trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : t('explore.tbd', 'TBD')}</Text>
+                <Text style={styles.vendorName}>{t('explore.by', 'by')} {trip.vendorName}</Text>
+              </View>
+              <View style={styles.rightCol}>
+                {price && (
+                  <BlurView intensity={60} tint="dark" style={styles.glassPill}>
+                    <Text style={styles.priceBadgeText}>₹{price}</Text>
+                  </BlurView>
+                )}
+                <BlurView intensity={40} tint="light" style={styles.glassPillSecondary}>
+                  <Text style={styles.pillText}>{available} {t('explore.left', 'left')}</Text>
+                </BlurView>
+              </View>
+            </LinearGradient>
+          </ImageBackground>
+        </Animated.View>
+      </TouchableOpacity>
+    </Link>
+  );
+};
 
 export default function HomeScreen() {
   const { trips, loading, fetchMoreTrips, hasMoreTrips, refreshTrips } = useAppContext();
@@ -39,48 +96,84 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <OllieLoading size={120} />
-        <Text style={{ marginTop: 20, color: '#8a94a6', fontWeight: '600' }}>{t('common.loading')}</Text>
+      <View style={styles.container}>
+        <View style={{ height: 250, backgroundColor: '#e2e8f0' }} />
+        <ScrollView style={{ paddingHorizontal: 16, marginTop: -40 }}>
+          {[1, 2, 3].map(i => (
+            <View key={i} style={[styles.cardContainer, { padding: 15, backgroundColor: '#fff', borderRadius: 20 }]}>
+              <Skeleton height={150} borderRadius={10} style={{ marginBottom: 10 }} />
+              <Skeleton height={20} width="70%" style={{ marginBottom: 5 }} />
+              <Skeleton height={16} width="40%" />
+            </View>
+          ))}
+        </ScrollView>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <FontAwesome name="search" size={18} color="#8a94a6" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder={t('explore.searchPlaceholder')}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-          clearButtonMode="while-editing"
-          placeholderTextColor="#8a94a6"
+      {/* Hero Section */}
+      <ImageBackground 
+        source={{ uri: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&q=80' }} 
+        style={styles.heroSection}
+      >
+        <LinearGradient
+          colors={['rgba(0,0,0,0.2)', 'rgba(240,242,245,1)']}
+          style={StyleSheet.absoluteFillObject}
         />
-      </View>
+        <View style={styles.heroContent}>
+          <Text style={styles.heroTitle}>{t('explore.heroTitle', 'Discover Your Next Adventure')}</Text>
+          <Text style={styles.heroSubtitle}>{t('explore.heroSubtitle', 'Find and book the best trips directly from verified local guides.')}</Text>
+        </View>
+
+        {/* Glassmorphic Search Bar */}
+        <BlurView intensity={80} tint="default" style={styles.searchBlurContainer}>
+          <FontAwesome name="search" size={18} color="#4a5568" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder={t('explore.searchPlaceholder')}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+            placeholderTextColor="#718096"
+          />
+        </BlurView>
+      </ImageBackground>
 
       {/* Filter Chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8 }}>
-        {PRICE_FILTERS.map((f, idx) => (
-          <TouchableOpacity
-            key={idx}
-            style={[styles.filterChip, activeFilter === idx && styles.filterChipActive]}
-            onPress={() => setActiveFilter(idx)}
-          >
-            <Text style={[styles.filterChipText, activeFilter === idx && styles.filterChipTextActive]}>{f.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={styles.filterWrapper}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={{ paddingHorizontal: 16 }}>
+          {PRICE_FILTERS.map((f, idx) => (
+            <TouchableOpacity
+              key={idx}
+              onPress={() => setActiveFilter(idx)}
+            >
+              {activeFilter === idx ? (
+                <LinearGradient
+                  colors={['#00b0ff', '#007bb5']}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={[styles.filterChip, { borderWidth: 0 }]}
+                >
+                  <Text style={styles.filterChipTextActive}>{t(f.labelKey, f.defaultLabel)}</Text>
+                </LinearGradient>
+              ) : (
+                <View style={styles.filterChip}>
+                  <Text style={styles.filterChipText}>{t(f.labelKey, f.defaultLabel)}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
       {/* Trip List */}
       <FlatList
         data={filteredTrips}
         keyExtractor={(item) => item.id}
         contentContainerStyle={filteredTrips.length === 0 ? styles.emptyContainer : styles.listContainer}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#00b0ff" />}
         onEndReached={() => {
           if (fetchMoreTrips && hasMoreTrips) fetchMoreTrips();
         }}
@@ -92,54 +185,12 @@ export default function HomeScreen() {
             </View>
           ) : null
         }
-        renderItem={({ item }) => {
-          const price = item.packages && item.packages.length > 0 ? item.packages[0].price : null;
-          const available = item.batches ? item.batches.reduce((acc, b) => acc + (b.totalSeats - b.bookedSeats), 0) : 0;
-          return (
-            <Link href={`/trip/${item.id}`} asChild>
-              <TouchableOpacity style={styles.cardContainer} activeOpacity={0.8}>
-                <ImageBackground
-                  source={{ uri: item.images[0] || 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&q=80' }}
-                  style={styles.cardImage}
-                  imageStyle={{ borderRadius: 16 }}
-                >
-                  <View style={styles.overlay}>
-                    <View style={styles.titleContainer}>
-                      {item.tripStatus === 'started' && (
-                        <View style={styles.liveBadge}>
-                          <Text style={styles.liveBadgeText}>🔴 LIVE</Text>
-                        </View>
-                      )}
-                      {item.tripStatus === 'completed' && (
-                        <View style={[styles.liveBadge, { backgroundColor: '#4a5568' }]}>
-                          <Text style={styles.liveBadgeText}>✓ Completed</Text>
-                        </View>
-                      )}
-                      <Text style={styles.title}>{item.title}</Text>
-                      <Text style={styles.date}>{item.batches && item.batches.length > 0 ? item.batches[0].dateDuration : 'TBD'}</Text>
-                      <Text style={styles.vendorName}>by {item.vendorName}</Text>
-                    </View>
-                    <View style={styles.rightCol}>
-                      {price && (
-                        <View style={styles.priceBadge}>
-                          <Text style={styles.priceBadgeText}>₹{price}</Text>
-                        </View>
-                      )}
-                      <View style={styles.pill}>
-                        <Text style={styles.pillText}>{available} left</Text>
-                      </View>
-                    </View>
-                  </View>
-                </ImageBackground>
-              </TouchableOpacity>
-            </Link>
-          );
-        }}
+        renderItem={({ item }) => <AnimatedCard trip={item} t={t} />}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <FontAwesome name="map-o" size={64} color="#cbd5e0" />
-            <Text style={styles.emptyTitle}>No Trips Found</Text>
-            <Text style={styles.emptySubtitle}>Try adjusting your search or filters to discover new adventures.</Text>
+            <Text style={styles.emptyTitle}>{t('explore.noTrips', 'No Trips Found')}</Text>
+            <Text style={styles.emptySubtitle}>{t('explore.noTripsSub', 'Try adjusting your search or filters to discover new adventures.')}</Text>
           </View>
         }
       />
@@ -149,58 +200,92 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f2f5' },
-  searchContainer: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff',
-    margin: 16, marginBottom: 0, borderRadius: 12, paddingHorizontal: 16,
-    paddingVertical: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
+  heroSection: {
+    height: 280,
+    justifyContent: 'flex-end',
+    paddingBottom: 20,
   },
-  searchIcon: { marginRight: 10 },
-  searchInput: { flex: 1, fontSize: 16, color: '#333' },
+  heroContent: {
+    paddingHorizontal: 24,
+    marginBottom: 20,
+  },
+  heroTitle: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#1a202c',
+    marginBottom: 8,
+    textShadowColor: 'rgba(255,255,255,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 10,
+  },
+  heroSubtitle: {
+    fontSize: 15,
+    color: '#4a5568',
+    fontWeight: '500',
+    lineHeight: 22,
+  },
+  searchBlurContainer: {
+    flexDirection: 'row', alignItems: 'center', 
+    marginHorizontal: 16, borderRadius: 16, paddingHorizontal: 16,
+    paddingVertical: 14, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+  },
+  searchIcon: { marginRight: 12 },
+  searchInput: { flex: 1, fontSize: 16, color: '#1a202c', fontWeight: '500' },
+  filterWrapper: {
+    marginTop: 10,
+    marginBottom: 5,
+  },
   filterRow: { maxHeight: 50 },
   filterChip: {
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: '#e2e8f0',
-    marginRight: 8, justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 18, paddingVertical: 10, borderRadius: 25, 
+    backgroundColor: '#ffffff', marginRight: 10, 
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 3, elevation: 2,
+    borderWidth: 1, borderColor: '#e2e8f0',
   },
-  filterChipActive: { backgroundColor: '#00b0ff' },
   filterChipText: { fontSize: 13, fontWeight: '600', color: '#4a5568' },
-  filterChipTextActive: { color: '#fff' },
+  filterChipTextActive: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
   listContainer: { padding: 16, paddingBottom: 40 },
   emptyContainer: { flex: 1, padding: 16 },
   cardContainer: {
-    height: 210, marginBottom: 20, shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15,
-    shadowRadius: 10, elevation: 5,
+    height: 240, marginBottom: 24, shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2,
+    shadowRadius: 15, elevation: 8,
   },
   cardImage: { flex: 1, justifyContent: 'flex-end' },
   overlay: {
-    padding: 16, backgroundColor: 'rgba(0,0,0,0.45)',
-    borderBottomLeftRadius: 16, borderBottomRightRadius: 16,
+    padding: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
+    paddingTop: 80, // Ensures gradient stretches up nicely
   },
-  titleContainer: { flex: 1, marginRight: 10 },
+  titleContainer: { flex: 1, marginRight: 15 },
   liveBadge: {
-    alignSelf: 'flex-start', backgroundColor: '#e53e3e',
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, marginBottom: 4,
+    alignSelf: 'flex-start', overflow: 'hidden',
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
   },
-  liveBadgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  liveBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
   title: {
-    color: '#ffffff', fontSize: 20, fontWeight: 'bold',
-    textShadowColor: 'rgba(0,0,0,0.75)', textShadowOffset: { width: -1, height: 1 }, textShadowRadius: 10,
+    color: '#ffffff', fontSize: 22, fontWeight: '800', letterSpacing: -0.5,
+    textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4,
   },
   date: {
-    color: '#e0e0e0', fontSize: 13, marginTop: 3, fontWeight: '500',
-    textShadowColor: 'rgba(0,0,0,0.75)', textShadowOffset: { width: -1, height: 1 }, textShadowRadius: 5,
+    color: '#e2e8f0', fontSize: 14, marginTop: 4, fontWeight: '600',
   },
-  vendorName: { color: '#a0c8ff', fontSize: 12, marginTop: 2 },
-  rightCol: { alignItems: 'flex-end', gap: 6 },
-  priceBadge: { backgroundColor: '#00b0ff', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  priceBadgeText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  pill: {
-    backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10,
-    paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+  vendorName: { color: '#90cdf4', fontSize: 13, marginTop: 4, fontWeight: '700' },
+  rightCol: { alignItems: 'flex-end', gap: 8 },
+  glassPill: { 
+    overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)'
   },
-  pillText: { color: '#fff', fontWeight: '600', fontSize: 12 },
+  glassPillSecondary: {
+    overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)'
+  },
+  priceBadgeText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+  pillText: { color: '#1a202c', fontWeight: '800', fontSize: 12 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
   emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#4a5568', marginTop: 20 },
   emptySubtitle: { fontSize: 15, color: '#8a94a6', textAlign: 'center', marginTop: 8, paddingHorizontal: 30 },

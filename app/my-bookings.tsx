@@ -65,8 +65,11 @@ export default function MyBookingsScreen() {
         data.sort((a, b) => b.createdAt - a.createdAt);
         setBookings(data);
         AsyncStorage.setItem('cached_bookings', JSON.stringify(data)).catch(() => {});
-      } catch (error) {
-        console.error("Error fetching bookings", error);
+      } catch (error: any) {
+        // Suppress expected permission errors for anonymous web dev testing
+        if (error?.code !== 'permission-denied') {
+          console.error("Error fetching bookings", error);
+        }
       } finally {
         setLoading(false);
       }

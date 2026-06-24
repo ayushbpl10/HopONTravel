@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, Modal, ActivityIndicator, Linking } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, Modal, ActivityIndicator, Linking, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import { useAppContext } from '../context/AppContext';
 import { FontAwesome } from '@expo/vector-icons';
@@ -8,7 +9,8 @@ import { Trip } from '../data/trips';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadImage } from '../utils/uploadImage';
 import OllieLoading from '../components/OllieLoading';
-import { parseWhatsAppMessage, AIProvider } from '../utils/aiParser';
+import { parseWhatsAppMessage, AIProvider, parseLocalHeuristics } from '../utils/aiParser';
+import { Logger } from '../utils/logger';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTranslation } from 'react-i18next';
 
@@ -24,7 +26,7 @@ const LIMITS = {
 };
 
 export default function VendorDashboardScreen() {
-  const { trips, vendorProfile, loginWithGoogle, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip } = useAppContext();
+  const { trips, vendorProfile, loginWithGoogle, mockVendorLogin, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip } = useAppContext();
   const [upiInput, setUpiInput] = useState(vendorProfile?.upiId || '');
   const [waInput, setWaInput] = useState(vendorProfile?.whatsappNumber || '');
   const [nameInput, setNameInput] = useState(vendorProfile?.name || '');
@@ -51,8 +53,27 @@ export default function VendorDashboardScreen() {
   const [isAiModalVisible, setIsAiModalVisible] = useState(false);
   const [aiProvider, setAiProvider] = useState<AIProvider>('gemini');
   const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [waText, setWaText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
+
+  useEffect(() => {
+    const loadAiSettings = async () => {
+      try {
+        const savedProvider = await AsyncStorage.getItem('ai_provider');
+        const savedKey = await AsyncStorage.getItem('ai_api_key');
+        if (savedProvider === 'gemini' || savedProvider === 'openai') {
+          setAiProvider(savedProvider as AIProvider);
+        }
+        if (savedKey) {
+          setApiKey(savedKey);
+        }
+      } catch (e) {
+        console.error("Failed to load AI settings", e);
+      }
+    };
+    loadAiSettings();
+  }, []);
 
   const handleLogin = async () => {
     await loginWithGoogle();
@@ -112,6 +133,32 @@ export default function VendorDashboardScreen() {
     setEditPickupPoints([]);
     setEditTotalSeats('20');
     setEditBookedSeats('0');
+    setEditImages([]);
+  };
+
+  const startAddingFromParsed = (trip: Partial<Trip>) => {
+    if (trips.length >= LIMITS.MAX_TRIPS_PER_VENDOR) {
+      Alert.alert('Limit Reached', `You can only have up to ${LIMITS.MAX_TRIPS_PER_VENDOR} active trip listings on the free plan.`);
+      return;
+    }
+    setIsAddingNew(true);
+    setEditingTrip({ id: 'new', ...trip } as Trip);
+    setEditTitle(trip.title || '');
+    setEditPrice(trip.packages && trip.packages.length > 0 ? trip.packages[0].price.toString() : '₹');
+    setEditDesc(trip.description || '');
+    
+    // Attempt to parse start date
+    let startDate = new Date();
+    if (trip.batches && trip.batches.length > 0) {
+      const match = trip.batches[0].dateDuration.match(/(\d{1,2})/);
+      if (match) startDate.setDate(parseInt(match[1]));
+    }
+    setEditStartDate(startDate);
+    setEditEndDate(new Date(startDate.getTime() + 86400000 * 2));
+    
+    setEditPickupPoints(trip.pickupPoints || []);
+    setEditTotalSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].totalSeats.toString() : '20');
+    setEditBookedSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].bookedSeats.toString() : '0');
     setEditImages([]);
   };
 
@@ -231,61 +278,72 @@ export default function VendorDashboardScreen() {
       setEditingTrip(null);
       setIsAddingNew(false);
       Alert.alert('Success', isAddingNew ? 'New trip listed!' : 'Trip updated successfully!');
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Error', 'Failed to save trip. Check your connection.');
+    } catch (error: any) {
+      Logger.error('Failed to save trip', error);
+      Alert.alert('Error', error?.message || 'Failed to save trip. Check your connection.');
     } finally {
       setIsUploading(false);
     }
   };
 
   const handleAiParse = async () => {
-    if (!apiKey.trim() || !waText.trim()) {
-      Alert.alert('Error', 'Please provide both an API Key and the WhatsApp message.');
+    if (!waText.trim()) {
+      Alert.alert('Error', 'Please provide the WhatsApp message.');
       return;
+    }
+
+    if (apiKey.trim()) {
+      AsyncStorage.setItem('ai_provider', aiProvider).catch(e => Logger.warn('Failed to save AI provider', e));
+      AsyncStorage.setItem('ai_api_key', apiKey).catch(e => Logger.warn('Failed to save API key', e));
     }
 
     setIsParsing(true);
     try {
-      const parsedTrips = await parseWhatsAppMessage(waText, aiProvider, apiKey);
+      // 1. Try Local Heuristics FIRST
+      let parsedTrips = parseLocalHeuristics(waText);
+      let trip = parsedTrips[0];
       
+      // 2. Evaluate if local heuristics need AI enhancement (missing critical or detailed fields)
+      const needsAI = 
+        !trip.title || 
+        !trip.packages || trip.packages.length === 0 ||
+        !trip.batches || trip.batches.length === 0 ||
+        !trip.itinerary || trip.itinerary.length < 20 ||
+        (trip.inclusions?.length === 0 && trip.exclusions?.length === 0);
+
+      if (needsAI && apiKey.trim()) {
+        Logger.info('Local extraction needs refinement, enhancing with AI');
+        parsedTrips = await parseWhatsAppMessage(waText, aiProvider, apiKey);
+      } else if (needsAI && !apiKey.trim()) {
+        Alert.alert('Notice', 'Local parsing extracted limited data. You can provide an API key for better AI extraction.');
+      }
+
       if (!parsedTrips || parsedTrips.length === 0) {
         Alert.alert('Failed', 'No trips could be extracted from the text.');
         return;
       }
 
-      // Save each parsed trip to the database
-      let count = 0;
-      for (const trip of parsedTrips) {
-        if (trips.length + count >= LIMITS.MAX_TRIPS_PER_VENDOR) break;
-        
-        await addTrip({
-          title: trip.title || 'Untitled Trip',
-          description: trip.description || '',
-          batches: trip.batches || [],
-          packages: trip.packages || [],
-          addOns: trip.addOns || [],
-          pickupPoints: trip.pickupPoints || [],
-          itinerary: trip.itinerary || '',
-          inclusions: trip.inclusions || [],
-          exclusions: trip.exclusions || [],
-          thingsToCarry: trip.thingsToCarry || [],
-          cancellationPolicy: trip.cancellationPolicy || [],
-          images: [],
-          vendorName: vendorProfile?.name || '',
-          vendorId: vendorProfile?.id || '',
-          vendorUPI: [vendorProfile?.upiId || ''],
-          vendorWhatsApp: vendorProfile?.whatsappNumber || '',
-          status: 'draft'
-        } as any);
-        count++;
-      }
-
-      Alert.alert('Success', `Successfully imported ${count} trip(s) as drafts!`);
+      // 3. Instead of saving silently, open the editor with the first parsed trip!
       setIsAiModalVisible(false);
       setWaText('');
+      startAddingFromParsed(parsedTrips[0]);
+      
+      if (parsedTrips.length > 1) {
+         Alert.alert('Notice', `Extracted \${parsedTrips.length} trips, but loading the first one into the editor for validation.`);
+      }
+
     } catch (error: any) {
-      Alert.alert('Parsing Error', error.message || 'Failed to parse message.');
+      Logger.error('AI Parse failed', error);
+      // Fallback: If AI completely crashed (e.g. 503), just use the local heuristics anyway!
+      const fallbackTrips = parseLocalHeuristics(waText);
+      if (fallbackTrips.length > 0) {
+        Alert.alert('AI Error', 'AI services unavailable. Loaded basic details locally. Please fill in the rest manually.');
+        setIsAiModalVisible(false);
+        setWaText('');
+        startAddingFromParsed(fallbackTrips[0]);
+      } else {
+        Alert.alert('Parsing Error', error.message || 'Failed to parse message.');
+      }
     } finally {
       setIsParsing(false);
     }
@@ -296,24 +354,31 @@ export default function VendorDashboardScreen() {
       <Text style={styles.sectionTitle}>Support & Feedback</Text>
       <Text style={styles.subtitle}>Help us improve or support the platform!</Text>
       
-      <TouchableOpacity style={styles.actionButton} onPress={() => {
-        Alert.prompt(
-          "Report Issue",
-          "Please describe the issue you are facing. Logs will be attached automatically.",
-          [
-            { text: "Cancel", style: "cancel" },
-            { text: "Submit", onPress: async (text: string | undefined) => {
-              if (text) {
-                try {
-                  await addTrip({ title: `REPORT: ${text.substring(0, 20)}`, description: text, vendorName: vendorProfile?.name || 'Unknown', vendorId: vendorProfile?.id || 'Unknown', vendorWhatsApp: 'system', vendorUPI: ['system'], images: [], batches: [{ id: '1', dateDuration: 'REPORT_DO_NOT_DELETE', totalSeats: 0, bookedSeats: 0 }], packages: [], addOns: [], pickupPoints: [], itinerary: '', inclusions: [], exclusions: [], thingsToCarry: [], cancellationPolicy: [], status: 'draft' } as any); // Quick hack to save report to trips or a new collection
-                  Alert.alert("Sent", "Your issue has been reported to the server.");
-                } catch (e) {
-                  Alert.alert("Error", "Could not send report.");
-                }
-              }
-            }}
-          ]
-        );
+      <TouchableOpacity style={styles.actionButton} onPress={async () => {
+        const handleReport = async (text: string | null) => {
+          if (text) {
+            try {
+              await addTrip({ title: `REPORT: ${text.substring(0, 20)}`, description: text, vendorName: vendorProfile?.name || 'Unknown', vendorId: vendorProfile?.id || 'Unknown', vendorWhatsApp: 'system', vendorUPI: ['system'], images: [], batches: [{ id: '1', dateDuration: 'REPORT_DO_NOT_DELETE', totalSeats: 0, bookedSeats: 0 }], packages: [], addOns: [], pickupPoints: [], itinerary: '', inclusions: [], exclusions: [], thingsToCarry: [], cancellationPolicy: [], status: 'draft' } as any);
+              Alert.alert("Sent", "Your issue has been reported to the server.");
+            } catch (e) {
+              Alert.alert("Error", "Could not send report.");
+            }
+          }
+        };
+
+        if (Platform.OS === 'web') {
+          const text = window.prompt("Report Issue\n\nPlease describe the issue you are facing.");
+          handleReport(text);
+        } else {
+          Alert.prompt(
+            "Report Issue",
+            "Please describe the issue you are facing. Logs will be attached automatically.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Submit", onPress: (text) => handleReport(text) }
+            ]
+          );
+        }
       }}>
         <FontAwesome name="bug" size={18} color="#4a5568" style={{ marginRight: 10 }} />
         <Text style={styles.actionButtonText}>Report Issue with Logs</Text>
@@ -345,6 +410,16 @@ export default function VendorDashboardScreen() {
             <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
             <Text style={styles.googleButtonText}>{t('vendor.signInWithGoogle', 'Sign in with Google')}</Text>
           </TouchableOpacity>
+
+          {Platform.OS === 'web' && (
+            <TouchableOpacity 
+              style={[styles.googleButton, { backgroundColor: '#4a5568', marginTop: 15 }]} 
+              onPress={mockVendorLogin}
+            >
+              <FontAwesome name="code" size={20} color="white" style={{ marginRight: 10 }} />
+              <Text style={styles.googleButtonText}>Dev Login (Web Only)</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {renderSupportFeedback()}
@@ -724,14 +799,22 @@ export default function VendorDashboardScreen() {
                 <Text style={{ fontSize: 12, color: '#00b0ff', fontWeight: 'bold' }}>{t('vendor.getKey', 'Get Key')}</Text>
               </TouchableOpacity>
             </View>
-            <TextInput 
-              style={styles.input} 
-              value={apiKey} 
-              onChangeText={setApiKey} 
-              placeholder={`Enter ${aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} API Key`} 
-              secureTextEntry 
-              autoCapitalize="none"
-            />
+            <View style={{ position: 'relative', justifyContent: 'center' }}>
+              <TextInput 
+                style={[styles.input, { paddingRight: 40 }]} 
+                value={apiKey} 
+                onChangeText={setApiKey} 
+                placeholder={`Enter ${aiProvider === 'gemini' ? 'Gemini' : 'OpenAI'} API Key`} 
+                secureTextEntry={!showApiKey} 
+                autoCapitalize="none"
+              />
+              <TouchableOpacity 
+                style={{ position: 'absolute', right: 10, top: 12 }} 
+                onPress={() => setShowApiKey(!showApiKey)}
+              >
+                <FontAwesome name={showApiKey ? "eye-slash" : "eye"} size={20} color="#a0aec0" />
+              </TouchableOpacity>
+            </View>
             
             <View style={{flexDirection: 'row', alignItems: 'flex-start', marginBottom: 15, padding: 10, backgroundColor: '#e6f6ff', borderRadius: 8}}>
               <FontAwesome name="info-circle" size={16} color="#00b0ff" style={{marginRight: 10, marginTop: 2}} />

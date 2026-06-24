@@ -78,7 +78,7 @@ export default function BookingConfirmationScreen() {
 
           {/* Total */}
           <View style={[styles.row, { marginBottom: 0 }]}>
-            <Text style={styles.totalLabel}>{t('bookings.totalPaid', 'Total Paid')}</Text>
+            <Text style={styles.totalLabel}>{paymentStatus === 'pending' ? t('bookings.totalAmount', 'Total Amount') : t('bookings.totalPaid', 'Total Paid')}</Text>
             <Text style={styles.totalValue}>₹{totalPrice}</Text>
           </View>
 

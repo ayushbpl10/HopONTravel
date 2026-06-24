@@ -23,11 +23,17 @@ export const useLiveTracking = (tripId: string) => {
 
     const liveRef = doc(db, 'live_trips', tripId);
     
-    const unsubscribe = onSnapshot(liveRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setLiveState(docSnap.data() as LiveTripState);
+    const unsubscribe = onSnapshot(
+      liveRef, 
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setLiveState(docSnap.data() as LiveTripState);
+        }
+      },
+      (error) => {
+        console.log("Live tracking listener error (expected if web without auth):", error.message);
       }
-    });
+    );
 
     return () => unsubscribe();
   }, [tripId]);

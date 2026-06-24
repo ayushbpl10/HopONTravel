@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert, Dimensions, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert, Dimensions, Modal, TextInput, Platform } from 'react-native';
 import { Image } from 'expo-image';
 const { width } = Dimensions.get('window');
 import { useLocalSearchParams, router } from 'expo-router';
@@ -7,9 +7,10 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../../context/AppContext';
 import { useLiveTracking } from '../../hooks/useLiveTracking';
-import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { getDistance } from 'geolib';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import TripMap from '../../components/TripMap';
 
 export default function TripDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -56,10 +57,31 @@ export default function TripDetailScreen() {
   }
 
   useEffect(() => {
+    // Check if guest was already tracking this trip
+    AsyncStorage.getItem(`tracking_${id}`).then((storedGuestId) => {
+      if (storedGuestId) {
+        AsyncStorage.getItem(`guestName_${id}`).then(async (storedName) => {
+          if (storedName) {
+            setGuestName(storedName);
+            setIsTracking(true);
+            
+            // Restart location watcher
+            const sub = await Location.watchPositionAsync(
+              { accuracy: Location.Accuracy.High, distanceInterval: 100, timeInterval: 60000 },
+              (loc) => {
+                updateGuestLocation(storedGuestId, storedName, { latitude: loc.coords.latitude, longitude: loc.coords.longitude, updatedAt: Date.now() });
+              }
+            );
+            setLocationSubscription(sub);
+          }
+        });
+      }
+    });
+
     return () => {
       if (locationSubscription) locationSubscription.remove();
     };
-  }, [locationSubscription]);
+  }, []);
 
   if (!trip) {
     return (
@@ -97,9 +119,15 @@ export default function TripDetailScreen() {
       );
       setLocationSubscription(sub);
       setIsTracking(true);
+      
+      // Persist tracking state
+      await AsyncStorage.setItem(`tracking_${id}`, gId);
+      await AsyncStorage.setItem(`guestName_${id}`, guestName);
+
       Alert.alert('Joined!', 'Your location is now shared with the Captain.');
-    } catch (e) {
-      Alert.alert('Error', 'Could not join trip.');
+    } catch (e: any) {
+      console.error('Join Error:', e);
+      Alert.alert('Error', `Could not join trip: ${e.message || 'Unknown error'}`);
     }
   };
 
@@ -140,7 +168,8 @@ export default function TripDetailScreen() {
           seats: seats.toString(),
           totalPrice: totalPrice.toString(),
           bookingId: orderId,
-          packageName: selectedPackageName
+          packageName: selectedPackageName,
+          paymentStatus: 'pending'
         }
       });
     } catch (error) {
@@ -244,35 +273,32 @@ export default function TripDetailScreen() {
 
             <Text style={styles.sectionTitle}>{t('tripDetails.liveTracking', 'Live Tracking')}</Text>
             <View style={styles.mapWrapper}>
-              {liveState.captain ? (
-                <MapView
-                  style={styles.map}
-                  initialRegion={{
-                    latitude: liveState.captain.latitude,
-                    longitude: liveState.captain.longitude,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
-                  }}
-                >
-                  <Marker coordinate={liveState.captain} title="Bus / Captain">
-                    <FontAwesome name="bus" size={30} color="#00b0ff" />
-                  </Marker>
-                  
-                  {isTracking && guestId && liveState.travellers?.[guestId]?.location && (
-                    <Marker coordinate={liveState.travellers[guestId].location} title="You">
-                      <FontAwesome name="user-circle" size={24} color="#e53e3e" />
-                    </Marker>
-                  )}
-                </MapView>
-              ) : (
+              <TripMap 
+                captain={liveState.captain || null} 
+                travellers={liveState.travellers} 
+                guestId={guestId} 
+                isTracking={isTracking} 
+              />
+              {!liveState.captain && (
                 <View style={styles.mapPlaceholder}><Text>Waiting for Captain's location...</Text></View>
               )}
             </View>
 
             {!isTracking ? (
-              <TouchableOpacity style={styles.joinBtn} onPress={() => setIsJoinModalVisible(true)}>
-                <Text style={styles.joinBtnText}>{t('tripDetails.joinTrip', 'Join Trip & Share Location')}</Text>
-              </TouchableOpacity>
+              <View>
+                <TouchableOpacity 
+                  style={[styles.joinBtn, vendorProfile ? { opacity: 0.5 } : {}]} 
+                  disabled={!!vendorProfile}
+                  onPress={() => setIsJoinModalVisible(true)}
+                >
+                  <Text style={styles.joinBtnText}>{t('tripDetails.joinTrip', 'Join Trip & Share Location')}</Text>
+                </TouchableOpacity>
+                {vendorProfile && (
+                  <Text style={{ textAlign: 'center', marginTop: 8, color: '#e53e3e', fontSize: 12 }}>
+                    {t('tripDetails.vendorJoinWarning', 'You are logged in as a Vendor. Please sign out to join a trip as a traveller.')}
+                  </Text>
+                )}
+              </View>
             ) : (
               <View style={styles.trackingPill}>
                 <Text style={styles.trackingPillText}>✓ You are sharing your location</Text>
