@@ -85,7 +85,7 @@ interface AppContextType {
   addTrip: (trip: Omit<Trip, 'id'>) => Promise<void>;
   deleteTrip: (tripId: string) => Promise<void>;
   bookTrip: (booking: Omit<Booking, 'id'>) => Promise<void>;
-  updateBookingStatus: (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled') => Promise<void>;
+  updateBookingStatus: (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled' | 'failed') => Promise<void>;
   submitRating: (tripId: string, rating: Rating) => Promise<void>;
   fetchMoreTrips: () => Promise<void>;
   hasMoreTrips: boolean;
@@ -287,29 +287,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loadVendorBookings(profile.id);
     } catch (error: any) {
       console.error('Google Sign-In Error:', error);
-      
-      // Attempt to log the exact error to Firestore for debugging
-      try {
-        const errorMsg = error.message || JSON.stringify(error) || 'Unknown error';
-        await addDoc(collection(db, 'trips'), {
-          title: `LOGIN ERROR: ${errorMsg.substring(0, 20)}`,
-          description: `Full error: ${errorMsg}\nCode: ${error.code}`,
-          vendorName: 'System Log',
-          vendorWhatsApp: 'system',
-          vendorUPI: 'system',
-          images: [],
-          totalSeats: 0,
-          bookedSeats: 0,
-          price: '0',
-          dateDuration: new Date().toISOString()
-        } as any);
-      } catch (logError) {
-        console.error('Failed to log error to Firestore', logError);
-      }
-
       Alert.alert(
         'Login Failed', 
-        `Could not connect to Google.\nError: ${error.message || 'Unknown'}\n\nA diagnostic log has been sent to the server.`
+        `Could not connect to Google. Please try again.\nError: ${error.message || 'Unknown'}`
       );
     }
   };
@@ -377,11 +357,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setVendorProfile(updatedProfile);
       await AsyncStorage.setItem('vendorProfile', JSON.stringify(updatedProfile));
 
-      // 3. Update all trips owned by this vendor in Firestore
-      // (For now, we'll update all trips as per previous logic, but in real app we'd filter)
-      for (const trip of trips) {
-        const tripRef = doc(db, 'trips', trip.id);
-        await updateDoc(tripRef, {
+      // 3. Update only trips belonging to this vendor in Firestore
+      const { where } = await import('firebase/firestore');
+      const vendorTripsQ = query(collection(db, 'trips'), where('vendorId', '==', vendorProfile.id));
+      const vendorTripsSnap = await getDocs(vendorTripsQ);
+      for (const tripDoc of vendorTripsSnap.docs) {
+        await updateDoc(doc(db, 'trips', tripDoc.id), {
           vendorName: updatedProfile.name,
           vendorUPI: updatedProfile.upiId,
           vendorWhatsApp: updatedProfile.whatsappNumber
@@ -406,12 +387,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const bookTrip = async (booking: Omit<Booking, 'id'>) => {
     const tripRef = doc(db, 'trips', booking.tripId);
-    const tripSnap = await getDocs(query(collection(db, 'trips')));
-    const tripDoc = tripSnap.docs.find(d => d.id === booking.tripId);
+    // Bug Fix #4: Use getDoc for single-document fetch instead of scanning all trips
+    const { getDoc } = await import('firebase/firestore');
+    const tripDocSnap = await getDoc(tripRef);
     let finalBooking = { ...booking };
 
-    if (tripDoc) {
-      const trip = tripDoc.data() as Trip;
+    if (tripDocSnap.exists()) {
+      const trip = tripDocSnap.data() as Trip;
       // Try to find the vendorId based on WhatsApp number
       const { where } = await import('firebase/firestore');
       const vendorQ = query(collection(db, 'vendors'), where('whatsappNumber', '==', trip.vendorWhatsApp));
@@ -428,7 +410,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await addDoc(collection(db, 'bookings'), finalBooking);
 
       // Increment bookedSeats for the relevant batch
-      const updatedBatches = trip.batches.map(b =>
+      const updatedBatches = trip.batches.map((b: any) =>
         b.id === booking.batchId ? { ...b, bookedSeats: b.bookedSeats + (booking.seats || 1) } : b
       );
       await updateDoc(tripRef, { batches: updatedBatches });

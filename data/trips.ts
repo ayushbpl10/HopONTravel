@@ -59,12 +59,14 @@ export interface Booking {
   travelerPhone: string;
   travelerEmail?: string;
   totalPrice: number;
-  addOns: string[];
+  addOns?: string[];
   status: 'pending' | 'confirmed' | 'cancelled' | 'failed';
   createdAt: number;
   vendorId?: string;
   bookingId?: string;
   seats?: number;
+  userId?: string;  // Optional: anonymous auth uid
+  source?: 'app' | 'website'; // Track booking origin
 }
 
 export interface Trip {
