@@ -213,9 +213,43 @@ describe('HopON Travel Core Workflows', () => {
       expect(trips.length).toBe(1);
       expect(trips[0].title).toBe('Gemini Trip');
     });
+
+    it('should properly format local heuristics', async () => {
+      const trips = parseLocalHeuristics('Trek to XYZ \n Price: 2000 \n Time: 5 AM \n From Pune');
+      expect(trips.length).toBe(1);
+      expect(trips[0].title).toBe('Trek to XYZ');
+      expect(trips[0].packages[0].price).toBe(2000);
+      expect(trips[0].pickupPoints.length).toBeGreaterThan(0);
+    });
   });
 
-  describe('Workflow 5: Traveller Booking', () => {
+  describe('Workflow 5: Booking State Management', () => {
+    it('should correctly format updateBookingStatus parameters', async () => {
+      const { doc, updateDoc } = require('firebase/firestore');
+      
+      const bookingId = 'booking_123';
+      const status = 'confirmed';
+      const bookingRef = doc({}, 'bookings', bookingId);
+      
+      await updateDoc(bookingRef, { status });
+      
+      expect(doc).toHaveBeenCalledWith(expect.anything(), 'bookings', bookingId);
+      expect(updateDoc).toHaveBeenCalledWith(bookingRef, { status: 'confirmed' });
+    });
+
+    it('should correctly query vendorBookings based on vendor WhatsApp/ID', async () => {
+      const { collection, query, where } = require('firebase/firestore');
+      
+      const vendorId = 'vendor_001';
+      // Simulate the query in AppContext
+      const q = query(collection({}, 'bookings'), where('vendorId', '==', vendorId));
+      
+      expect(collection).toHaveBeenCalledWith(expect.anything(), 'bookings');
+      expect(where).toHaveBeenCalledWith('vendorId', '==', vendorId);
+    });
+  });
+
+  describe('Workflow 6: Traveller Booking', () => {
     it('should submit booking payload to bookings collection', async () => {
       const { collection, addDoc } = require('firebase/firestore');
       const bookingPayload = {

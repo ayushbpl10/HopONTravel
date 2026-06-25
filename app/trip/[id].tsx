@@ -131,101 +131,23 @@ export default function TripDetailScreen() {
     }
   };
 
-  const handleWhatsAppBooking = async () => {
-    const orderId = 'WA' + Math.floor(10000000 + Math.random() * 90000000).toString();
-    const message = `Hi ${trip.vendorName}, I want to book "${trip.title}"\nBatch: ${trip.batches?.find(b=>b.id===selectedBatchId)?.dateDuration}\nPackage: ${selectedPackageName}\nAdd-ons: ${selectedAddOns.join(', ') || 'None'}\nSeats: ${seats}\nTotal: ₹${totalPrice}`;
-    const url = `whatsapp://send?phone=${trip.vendorWhatsApp}&text=${encodeURIComponent(message)}`;
-    
-    try {
-      const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) {
-        await Linking.openURL(url);
-      } else {
-        const webUrl = `https://wa.me/${trip.vendorWhatsApp}?text=${encodeURIComponent(message)}`;
-        await Linking.openURL(webUrl);
+  const handleProceedToCheckout = () => {
+    router.push({
+      pathname: `/checkout/${trip.id}` as any,
+      params: {
+        batchId: selectedBatchId,
+        packageName: selectedPackageName,
+        seats: seats.toString(),
+        totalPrice: totalPrice.toString(),
+        tripTitle: trip.title,
+        vendorName: trip.vendorName,
+        vendorWhatsApp: trip.vendorWhatsApp,
+        vendorUPI: trip.vendorUPI ? trip.vendorUPI[0] : ''
       }
-      
-      if (vendorProfile) {
-        await bookTrip({
-          tripId: trip.id,
-          batchId: selectedBatchId,
-          packageName: selectedPackageName,
-          travelerName: vendorProfile.name,
-          travelerPhone: vendorProfile.whatsappNumber || '',
-          totalPrice,
-          addOns: selectedAddOns,
-          status: 'pending',
-          createdAt: Date.now(),
-          userId: vendorProfile.id,
-        } as any);
-      }
-      
-      router.replace({
-        pathname: '/booking-confirmation' as any,
-        params: {
-          tripTitle: trip.title,
-          tripDate: trip.batches?.find(b => b.id === selectedBatchId)?.dateDuration || 'TBD',
-          seats: seats.toString(),
-          totalPrice: totalPrice.toString(),
-          bookingId: orderId,
-          packageName: selectedPackageName,
-          paymentStatus: 'pending'
-        }
-      });
-    } catch (error) {
-      Alert.alert('Error', 'Could not open WhatsApp.');
-    }
+    });
   };
 
-  const handleUPIPayment = async () => {
-    const orderId = 'ORD' + Math.floor(10000000 + Math.random() * 90000000).toString();
-    const upiUrl = `upi://pay?pa=${trip.vendorUPI[0]}&pn=${encodeURIComponent(trip.vendorName)}&am=${totalPrice}.00&cu=INR&tr=${orderId}`;
 
-    try {
-      await Linking.openURL(upiUrl);
-      
-      Alert.alert(
-        'Payment Initiated',
-        'Your booking is marked as "Pending Verification". The vendor will verify your UPI payment and confirm your seat shortly.',
-        [
-          {
-            text: 'OK',
-            onPress: async () => {
-              if (vendorProfile) {
-                await bookTrip({
-                  tripId: trip.id,
-                  batchId: selectedBatchId,
-                  packageName: selectedPackageName,
-                  travelerName: vendorProfile.name,
-                  travelerPhone: vendorProfile.whatsappNumber || '',
-                  totalPrice,
-                  addOns: selectedAddOns,
-                  status: 'pending',
-                  createdAt: Date.now(),
-                  userId: vendorProfile.id,
-                } as any);
-              }
-              
-              router.replace({
-                pathname: '/booking-confirmation' as any,
-                params: {
-                  tripTitle: trip.title,
-                  tripDate: trip.batches?.find(b => b.id === selectedBatchId)?.dateDuration || 'TBD',
-                  seats: seats.toString(),
-                  totalPrice: totalPrice.toString(),
-                  bookingId: orderId,
-                  packageName: selectedPackageName,
-                  paymentStatus: 'pending'
-                }
-              });
-            }
-          }
-        ]
-      );
-    } catch (error) {
-      Alert.alert('Could Not Open UPI App', 'Please ensure you have a UPI app installed.');
-    }
-  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -499,22 +421,10 @@ export default function TripDetailScreen() {
         </View>
 
         <View style={styles.buttonRow}>
-          <TouchableOpacity style={[styles.bookButton, styles.upiButton]} onPress={handleUPIPayment}>
-            <FontAwesome name="rupee" size={20} color="white" style={styles.buttonIcon} />
-            <Text style={styles.bookButtonText}>{t('tripDetails.payViaUPI', 'Pay via UPI')}</Text>
+          <TouchableOpacity style={[styles.bookButton, styles.proceedButton]} onPress={handleProceedToCheckout}>
+            <Text style={styles.bookButtonText}>Proceed to Traveller Details</Text>
+            <FontAwesome name="arrow-right" size={16} color="white" style={{marginLeft: 8, marginTop: 2}} />
           </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.bookButton, styles.waButton]} onPress={handleWhatsAppBooking}>
-            <FontAwesome name="whatsapp" size={24} color="white" style={styles.buttonIcon} />
-            <Text style={styles.bookButtonText}>{t('tripDetails.whatsapp', 'WhatsApp')}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 15, padding: 10, backgroundColor: '#fff3cd', borderRadius: 8, borderWidth: 1, borderColor: '#ffeeba'}}>
-          <FontAwesome name="info-circle" size={16} color="#856404" style={{marginRight: 10}} />
-          <Text style={{flex: 1, fontSize: 12, color: '#856404', lineHeight: 18}}>
-            {t('tripDetails.manualConfirmHelp', 'Help: As UPI payments do not have automated callbacks, your booking will be marked as Pending. The vendor will manually verify your payment and confirm your seat.')}
-          </Text>
         </View>
       </View>
 
@@ -594,10 +504,8 @@ const styles = StyleSheet.create({
   vendorInfoText: { fontSize: 12, color: '#718096', marginLeft: 6 },
   buttonRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   bookButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 100, elevation: 4 },
-  upiButton: { backgroundColor: '#00b0ff', shadowColor: '#00b0ff', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-  waButton: { backgroundColor: '#25D366', shadowColor: '#25D366', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-  buttonIcon: { marginRight: 8 },
   bookButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
+  proceedButton: { backgroundColor: '#0f172a', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: 'white', padding: 24, borderRadius: 16 },

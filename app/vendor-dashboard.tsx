@@ -32,6 +32,8 @@ export default function VendorDashboardScreen() {
   const [nameInput, setNameInput] = useState(vendorProfile?.name || '');
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
+  const [activeTab, setActiveTab] = useState<'trips' | 'bookings'>('trips');
+  const [bookingSearch, setBookingSearch] = useState('');
   const { t } = useTranslation();
   
   // Edit/Add form states
@@ -385,7 +387,7 @@ export default function VendorDashboardScreen() {
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.donateButton} onPress={async () => {
-        const upiUrl = `upi://pay?pa=ayushbpl10@ybl&pn=HopON+Travel+Support&cu=INR`;
+        const upiUrl = `upi://pay?pa=ayushbpl10@ybl&pn=AbTohGhoomLe&cu=INR`;
         try {
           await Linking.openURL(upiUrl);
         } catch (error) {
@@ -483,8 +485,25 @@ export default function VendorDashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
+        {/* Tab Navigation */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity 
+            style={[styles.tabBtn, activeTab === 'trips' && styles.tabBtnActive]} 
+            onPress={() => setActiveTab('trips')}
+          >
+            <Text style={[styles.tabText, activeTab === 'trips' && styles.tabTextActive]}>Your Trips</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tabBtn, activeTab === 'bookings' && styles.tabBtnActive]} 
+            onPress={() => setActiveTab('bookings')}
+          >
+            <Text style={[styles.tabText, activeTab === 'bookings' && styles.tabTextActive]}>Manage Bookings</Text>
+          </TouchableOpacity>
+        </View>
+
+        {activeTab === 'trips' ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionTitle}>{t('vendor.yourTrips', 'Your Trips')}</Text>
               <Text style={styles.limitText}>{trips.length} / {LIMITS.MAX_TRIPS_PER_VENDOR} trips used</Text>
@@ -547,6 +566,74 @@ export default function VendorDashboardScreen() {
             ))
           )}
         </View>
+        ) : (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Manage Bookings</Text>
+              <TextInput 
+                style={[styles.input, { width: 150, marginBottom: 0 }]} 
+                placeholder="Search Name or ID" 
+                value={bookingSearch}
+                onChangeText={setBookingSearch}
+              />
+            </View>
+            
+            {vendorBookings.length === 0 ? (
+              <Text style={styles.emptyText}>No bookings received yet.</Text>
+            ) : (
+              vendorBookings.filter(b => b.travelerName.toLowerCase().includes(bookingSearch.toLowerCase()) || b.bookingId?.toLowerCase().includes(bookingSearch.toLowerCase())).map((booking) => (
+                <View key={booking.id} style={styles.bookingCard}>
+                  <View style={styles.bookingHeader}>
+                    <Text style={styles.bookingIdText}>{booking.bookingId}</Text>
+                    <View style={[styles.statusBadge, booking.status === 'confirmed' ? {backgroundColor: '#dcfce7'} : booking.status === 'failed' ? {backgroundColor: '#fee2e2'} : {backgroundColor: '#fef3c7'}]}>
+                      <Text style={[styles.statusText, booking.status === 'confirmed' ? {color: '#16a34a'} : booking.status === 'failed' ? {color: '#dc2626'} : {color: '#d97706'}]}>
+                        {booking.status.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.bookingBody}>
+                    <View style={styles.bookingRow}>
+                      <FontAwesome name="user" size={14} color="#64748b" style={{width: 20}} />
+                      <Text style={styles.bookingData}>{booking.travelerName}</Text>
+                    </View>
+                    <View style={styles.bookingRow}>
+                      <FontAwesome name="phone" size={14} color="#64748b" style={{width: 20}} />
+                      <Text style={styles.bookingData}>{booking.travelerPhone}</Text>
+                    </View>
+                    <View style={styles.bookingRow}>
+                      <FontAwesome name="ticket" size={14} color="#64748b" style={{width: 20}} />
+                      <Text style={styles.bookingData}>{booking.packageName} ({booking.seats} seats)</Text>
+                    </View>
+                    <View style={styles.bookingRow}>
+                      <FontAwesome name="rupee" size={14} color="#64748b" style={{width: 20}} />
+                      <Text style={[styles.bookingData, {fontWeight: 'bold', color: '#00b0ff'}]}>₹{booking.totalPrice}</Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.bookingActions}>
+                    {booking.status !== 'confirmed' && (
+                      <TouchableOpacity 
+                        style={[styles.statusUpdateBtn, {backgroundColor: '#22c55e'}]} 
+                        onPress={() => updateBookingStatus(booking.id, 'confirmed')}
+                      >
+                        <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Mark Success</Text>
+                      </TouchableOpacity>
+                    )}
+                    {booking.status !== 'failed' && (
+                      <TouchableOpacity 
+                        style={[styles.statusUpdateBtn, {backgroundColor: '#ef4444'}]} 
+                        onPress={() => updateBookingStatus(booking.id, 'failed')}
+                      >
+                        <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Mark Failed</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        )}
       </View>
 
       {/* Add/Edit Trip Modal */}
@@ -1214,5 +1301,24 @@ const styles = StyleSheet.create({
   },
   toggleBtnTextActive: {
     color: '#0f172a',
-  }
+  },
+  
+  // Tab Styles
+  tabContainer: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, padding: 4, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
+  tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 8 },
+  tabBtnActive: { backgroundColor: '#e0f7ff' },
+  tabText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
+  tabTextActive: { color: '#00b0ff', fontWeight: 'bold' },
+
+  // Booking Card Styles
+  bookingCard: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  bookingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  bookingIdText: { fontSize: 14, fontWeight: 'bold', color: '#475569', letterSpacing: 1 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100 },
+  statusText: { fontSize: 11, fontWeight: 'bold' },
+  bookingBody: { marginBottom: 16 },
+  bookingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  bookingData: { fontSize: 14, color: '#334155' },
+  bookingActions: { flexDirection: 'row', gap: 10 },
+  statusUpdateBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
 });

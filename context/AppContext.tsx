@@ -74,6 +74,7 @@ interface VendorProfile {
 
 interface AppContextType {
   trips: Trip[];
+  vendorBookings: Booking[];
   loading: boolean;
   vendorProfile: VendorProfile | null;
   loginWithGoogle: () => Promise<void>;
@@ -95,6 +96,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [vendorBookings, setVendorBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [vendorProfile, setVendorProfile] = useState<VendorProfile | null>(null);
 
@@ -214,8 +216,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const found = vendorDoc.docs.find(d => d.id === parsed.id);
           if (found) {
             setVendorProfile({ id: found.id, ...found.data() } as VendorProfile);
+            loadVendorBookings(found.id);
           } else {
             setVendorProfile(parsed);
+            if (parsed.id) loadVendorBookings(parsed.id);
           }
         }
       } catch (e) {
@@ -280,6 +284,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setVendorProfile(profile);
       await AsyncStorage.setItem('vendorProfile', JSON.stringify(profile));
+      loadVendorBookings(profile.id);
     } catch (error: any) {
       console.error('Google Sign-In Error:', error);
       
@@ -319,7 +324,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      const email = 'dev@hopontravel.com';
+      const email = 'AbTohGhoomLe@gmail.com';
       const name = 'Dev Vendor';
       
       const q = query(collection(db, 'vendors'));
@@ -343,6 +348,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       await AsyncStorage.setItem('vendorProfile', JSON.stringify(profile));
       setVendorProfile(profile);
+      loadVendorBookings(profile.id);
       Alert.alert('Dev Login', 'Successfully mocked login on Web!');
     } catch (e) {
       Alert.alert('Error', 'Mock login failed.');
@@ -399,52 +405,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const bookTrip = async (booking: Omit<Booking, 'id'>) => {
-    // Save booking to a separate 'bookings' collection
-    await addDoc(collection(db, 'bookings'), booking);
-    // Increment bookedSeats for the relevant batch
     const tripRef = doc(db, 'trips', booking.tripId);
     const tripSnap = await getDocs(query(collection(db, 'trips')));
     const tripDoc = tripSnap.docs.find(d => d.id === booking.tripId);
+    let finalBooking = { ...booking };
+
     if (tripDoc) {
       const trip = tripDoc.data() as Trip;
+      // Try to find the vendorId based on WhatsApp number
+      const { where } = await import('firebase/firestore');
+      const vendorQ = query(collection(db, 'vendors'), where('whatsappNumber', '==', trip.vendorWhatsApp));
+      const vendorSnap = await getDocs(vendorQ);
+      let vendorToken = '';
+      
+      if (!vendorSnap.empty) {
+        const vData = vendorSnap.docs[0].data();
+        finalBooking.vendorId = vendorSnap.docs[0].id;
+        vendorToken = vData.pushToken;
+      }
+      
+      // Save booking to a separate 'bookings' collection
+      await addDoc(collection(db, 'bookings'), finalBooking);
+
+      // Increment bookedSeats for the relevant batch
       const updatedBatches = trip.batches.map(b =>
-        b.id === booking.batchId ? { ...b, bookedSeats: b.bookedSeats + 1 } : b
+        b.id === booking.batchId ? { ...b, bookedSeats: b.bookedSeats + (booking.seats || 1) } : b
       );
       await updateDoc(tripRef, { batches: updatedBatches });
 
       // Send Push Notification to Vendor
-      try {
-        const { where } = await import('firebase/firestore');
-        const vendorQ = query(collection(db, 'vendors'), where('whatsappNumber', '==', trip.vendorWhatsApp));
-        const vendorSnap = await getDocs(vendorQ);
-        if (!vendorSnap.empty) {
-          const vData = vendorSnap.docs[0].data();
-          if (vData.pushToken) {
-            await fetch('https://exp.host/--/api/v2/push/send', {
-              method: 'POST',
-              headers: {
-                Accept: 'application/json',
-                'Accept-encoding': 'gzip, deflate',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                to: vData.pushToken,
-                sound: 'default',
-                title: 'New Booking! 🎉',
-                body: `${booking.travelerName} just booked a package for ${trip.title}.`,
-              }),
-            });
-          }
+      if (vendorToken) {
+        try {
+          await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Accept-encoding': 'gzip, deflate',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              to: vendorToken,
+              sound: 'default',
+              title: 'New Booking! 🎉',
+              body: `${booking.travelerName} just booked a package for ${trip.title}.`,
+            }),
+          });
+        } catch (e) {
+          console.error("Failed to send push notification", e);
         }
-      } catch (e) {
-        console.error("Failed to send push notification", e);
       }
+    } else {
+      await addDoc(collection(db, 'bookings'), finalBooking);
     }
   };
 
-  const updateBookingStatus = async (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled') => {
+  const updateBookingStatus = async (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled' | 'failed') => {
     const bookingRef = doc(db, 'bookings', bookingId);
     await updateDoc(bookingRef, { status });
+    if (vendorProfile) {
+      loadVendorBookings(vendorProfile.id);
+    }
   };
 
   const submitRating = async (tripId: string, rating: Rating) => {
@@ -453,7 +473,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   return (
-    <AppContext.Provider value={{ trips, loading, vendorProfile, loginWithGoogle, mockVendorLogin, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, submitRating, fetchMoreTrips, hasMoreTrips, refreshTrips }}>
+    <AppContext.Provider value={{ trips, vendorBookings, loading, vendorProfile, loginWithGoogle, mockVendorLogin, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, submitRating, fetchMoreTrips, hasMoreTrips, refreshTrips }}>
       {children}
     </AppContext.Provider>
   );

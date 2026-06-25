@@ -57,10 +57,14 @@ export interface Booking {
   packageName: string;
   travelerName: string;
   travelerPhone: string;
+  travelerEmail?: string;
   totalPrice: number;
   addOns: string[];
-  status: 'pending' | 'confirmed';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'failed';
   createdAt: number;
+  vendorId?: string;
+  bookingId?: string;
+  seats?: number;
 }
 
 export interface Trip {

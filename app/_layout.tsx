@@ -56,7 +56,7 @@ export default function RootLayout() {
           <Stack.Screen 
             name="index" 
             options={{ 
-              title: 'HopONTravel',
+              title: 'Ab Toh Ghoom Le',
               headerLeft: undefined, // Removed from left
               headerRight: () => (
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -66,6 +66,11 @@ export default function RootLayout() {
                   >
                     <FontAwesome name="language" size={24} color="#00b0ff" />
                   </TouchableOpacity>
+                  <Link href={"/booking-status" as any} asChild>
+                    <TouchableOpacity style={{ marginRight: 20 }}>
+                      <FontAwesome name="search" size={22} color="#00b0ff" />
+                    </TouchableOpacity>
+                  </Link>
                   <Link href={"/vendor-dashboard" as any} asChild>
                     <TouchableOpacity style={{ marginRight: 15 }}>
                       <FontAwesome name="user-circle" size={24} color="#00b0ff" />
@@ -79,6 +84,7 @@ export default function RootLayout() {
           <Stack.Screen name="vendor-dashboard" options={{ title: 'Vendor Portal', presentation: 'modal' }} />
           <Stack.Screen name="vendor-live/[id]" options={{ title: 'Live Tracking' }} />
           <Stack.Screen name="booking-confirmation" options={{ title: 'Booking Confirmation' }} />
+          <Stack.Screen name="booking-status" options={{ title: 'Booking Status' }} />
         </Stack>
       </AppProvider>
     </ErrorBoundary>

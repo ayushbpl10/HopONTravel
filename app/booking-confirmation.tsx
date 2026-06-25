@@ -8,8 +8,40 @@ import { useTranslation } from 'react-i18next';
 
 export default function BookingConfirmationScreen() {
   const params = useLocalSearchParams();
-  const { tripTitle, tripDate, seats, totalPrice, bookingId, packageName, paymentStatus } = params;
+  const { tripTitle, tripDate, seats, totalPrice, bookingId, packageName, paymentStatus, vendorName, vendorWhatsApp, vendorUPI } = params;
   const { t } = useTranslation();
+
+  const handleWhatsAppBooking = async () => {
+    const message = `Hi ${vendorName}, I just booked "${tripTitle}" via Ab Toh Ghoom Le!\nBooking ID: ${bookingId}\nSeats: ${seats}\nTotal: ₹${totalPrice}\n\nPlease confirm my booking and share payment details.`;
+    const url = `whatsapp://send?phone=${vendorWhatsApp}&text=${encodeURIComponent(message)}`;
+    
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        const webUrl = `https://wa.me/${vendorWhatsApp}?text=${encodeURIComponent(message)}`;
+        await Linking.openURL(webUrl);
+      }
+    } catch (error) {
+      alert('Could not open WhatsApp.');
+    }
+  };
+
+  const handleUPIPayment = async () => {
+    if (!vendorUPI) {
+      alert('UPI details not provided by the vendor. Please contact via WhatsApp.');
+      return;
+    }
+    const upiUrl = `upi://pay?pa=${vendorUPI}&pn=${encodeURIComponent(vendorName as string)}&am=${totalPrice}.00&cu=INR&tr=${bookingId}`;
+
+    try {
+      await Linking.openURL(upiUrl);
+      alert('Your payment attempt was logged. The vendor will manually verify it.');
+    } catch (error) {
+      alert('Could not open UPI App. Please ensure you have a UPI app installed.');
+    }
+  };
 
   useEffect(() => {
     // Success haptic on arrival
@@ -19,7 +51,7 @@ export default function BookingConfirmationScreen() {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `🎉 I just booked "${tripTitle}" on HopON Travel!\nDate: ${tripDate}\nSeats: ${seats}\nBooking ID: ${bookingId}`,
+        message: `🎉 I just booked "${tripTitle}" on Ab Toh Ghoom Le!\nDate: ${tripDate}\nSeats: ${seats}\nBooking ID: ${bookingId}`,
       });
     } catch (e) {}
   };
@@ -105,6 +137,26 @@ export default function BookingConfirmationScreen() {
               : t('booking.confirmedNote', 'Show this booking ID to your trip captain on departure day.')}
           </Text>
         </View>
+
+        {/* Conditional Payment Actions */}
+        {paymentStatus === 'pending' && (
+          <View style={styles.paymentSection}>
+            <Text style={styles.paymentHeader}>Complete Your Payment</Text>
+            <View style={styles.buttonRow}>
+              {vendorUPI ? (
+                <TouchableOpacity style={[styles.bookButton, styles.upiButton]} onPress={handleUPIPayment}>
+                  <FontAwesome name="rupee" size={20} color="white" style={styles.buttonIcon} />
+                  <Text style={styles.bookButtonText}>Pay via UPI</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <TouchableOpacity style={[styles.bookButton, styles.waButton]} onPress={handleWhatsAppBooking}>
+                <FontAwesome name="whatsapp" size={24} color="white" style={styles.buttonIcon} />
+                <Text style={styles.bookButtonText}>WhatsApp</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Actions */}
         <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
@@ -199,4 +251,13 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: '#e2e8f0', alignItems: 'center',
   },
   homeBtnText: { color: '#4a5568', fontSize: 16, fontWeight: '600' },
+  
+  paymentSection: { width: '100%', marginBottom: 20, marginTop: 10 },
+  paymentHeader: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 12, textAlign: 'center' },
+  buttonRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  bookButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 100, elevation: 4 },
+  upiButton: { backgroundColor: '#00b0ff', shadowColor: '#00b0ff', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  waButton: { backgroundColor: '#25D366', shadowColor: '#25D366', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  buttonIcon: { marginRight: 8 },
+  bookButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
 });
