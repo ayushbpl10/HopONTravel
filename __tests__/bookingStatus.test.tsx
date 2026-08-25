@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, screen } from '@testing-library/react-native';
 import BookingStatusScreen from '../app/booking-status';
 import { db } from '../config/firebase';
 import { getDocs } from 'firebase/firestore';
@@ -29,12 +29,12 @@ describe('Booking Status Flow', () => {
   });
 
   it('shows error if booking ID is empty', async () => {
-    const { getByText, getByPlaceholderText } = render(<BookingStatusScreen />);
+    render(<BookingStatusScreen />);
     
-    const trackBtn = getByText('Track');
+    const trackBtn = screen.getByText('Track');
     fireEvent.press(trackBtn);
 
-    expect(getByText('Please enter a valid Booking ID.')).toBeTruthy();
+    expect(screen.getByText('Please enter a valid Booking ID.')).toBeTruthy();
   });
 
   it('fetches and displays confirmed booking correctly', async () => {
@@ -54,19 +54,19 @@ describe('Booking Status Flow', () => {
       ],
     });
 
-    const { getByText, getByPlaceholderText, queryByText } = render(<BookingStatusScreen />);
+    render(<BookingStatusScreen />);
     
-    const input = getByPlaceholderText('e.g. ATGL-XXXXX');
+    const input = screen.getByPlaceholderText('e.g. ATGL-XXXXX');
     fireEvent.changeText(input, 'ORD-123');
 
-    const trackBtn = getByText('Track');
+    const trackBtn = screen.getByText('Track');
     fireEvent.press(trackBtn);
 
     await waitFor(() => {
-      expect(getByText('BOOKING DETAILS')).toBeTruthy();
-      expect(getByText('Test Name')).toBeTruthy();
-      expect(getByText('CONFIRMED')).toBeTruthy();
-      expect(getByText(/Booking Confirmed! Show this ID/)).toBeTruthy();
+      expect(screen.getByText('BOOKING DETAILS')).toBeTruthy();
+      expect(screen.getByText('Test Name')).toBeTruthy();
+      expect(screen.getByText('CONFIRMED')).toBeTruthy();
+      expect(screen.getByText(/Booking Confirmed! Show this ID/)).toBeTruthy();
     });
   });
 
@@ -87,15 +87,15 @@ describe('Booking Status Flow', () => {
       ],
     });
 
-    const { getByText, getByPlaceholderText } = render(<BookingStatusScreen />);
+    render(<BookingStatusScreen />);
     
-    const input = getByPlaceholderText('e.g. ATGL-XXXXX');
+    const input = screen.getByPlaceholderText('e.g. ATGL-XXXXX');
     fireEvent.changeText(input, 'ORD-123');
-    fireEvent.press(getByText('Track'));
+    fireEvent.press(screen.getByText('Track'));
 
     await waitFor(() => {
-      expect(getByText('PENDING')).toBeTruthy();
-      expect(getByText(/Your payment is pending manual verification/)).toBeTruthy();
+      expect(screen.getByText('PENDING')).toBeTruthy();
+      expect(screen.getByText(/Your payment is pending manual verification/)).toBeTruthy();
     });
   });
 });

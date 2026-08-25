@@ -2,7 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { Trip, Rating, Booking, trips as initialTrips } from '../data/trips';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, auth } from '../config/firebase';
-import { signInAnonymously } from 'firebase/auth';
+import { signInAnonymously, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
@@ -44,8 +44,10 @@ import {
   onSnapshot, 
   doc, 
   setDoc,
+  getDoc,
   updateDoc, 
   query, 
+  where,
   getDocs,
   addDoc,
   deleteDoc,
@@ -164,6 +166,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await loadInitialTrips();
   };
 
+  // ─── VENDOR BOOKINGS (real-time listener) ─────────────────────
+  const loadVendorBookings = (vendorId: string) => {
+    const q = query(collection(db, 'bookings'), where('vendorId', '==', vendorId));
+    onSnapshot(q, (snapshot) => {
+      const bookingsData: Booking[] = [];
+      snapshot.forEach((docSnap) => {
+        bookingsData.push({ id: docSnap.id, ...docSnap.data() } as Booking);
+      });
+      // Sort newest first
+      bookingsData.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      setVendorBookings(bookingsData);
+    }, (error) => {
+      console.error('Error loading vendor bookings:', error);
+    });
+  };
+
   const fetchMoreTrips = async () => {
     if (!lastVisible || !hasMoreTrips) return;
     
@@ -211,13 +229,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const storedProfile = await AsyncStorage.getItem('vendorProfile');
         if (storedProfile) {
           const parsed = JSON.parse(storedProfile);
-          // Refresh from Firestore to get latest data
-          const vendorDoc = await getDocs(query(collection(db, 'vendors')));
-          const found = vendorDoc.docs.find(d => d.id === parsed.id);
-          if (found) {
-            setVendorProfile({ id: found.id, ...found.data() } as VendorProfile);
-            loadVendorBookings(found.id);
-          } else {
+          // Direct lookup by vendor ID (which is now the auth UID)
+          try {
+            const vendorDocSnap = await getDoc(doc(db, 'vendors', parsed.id));
+            if (vendorDocSnap.exists()) {
+              const profile = { id: vendorDocSnap.id, ...vendorDocSnap.data() } as VendorProfile;
+              setVendorProfile(profile);
+              loadVendorBookings(profile.id);
+            } else {
+              // Vendor doc not found in Firestore, use cached data
+              setVendorProfile(parsed);
+              if (parsed.id) loadVendorBookings(parsed.id);
+            }
+          } catch (e) {
+            // Firestore lookup failed (offline?), use cached data
             setVendorProfile(parsed);
             if (parsed.id) loadVendorBookings(parsed.id);
           }
@@ -234,28 +259,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();
 
-      // v13+ API: response = { type: 'success', data: { user: { email, name } } }
-      // Older API: response = { user: { email, name } }
+      // v13+ API: response = { type: 'success', data: { user: { email, name }, idToken } }
+      // Older API: response = { user: { email, name }, idToken }
       // We handle both for compatibility
       let email: string;
       let name: string;
+      let idToken: string | null = null;
 
       if ('type' in response && response.type === 'success' && response.data?.user) {
         // New v13+ format
         email = response.data.user.email;
         name = response.data.user.name || 'Vendor';
+        idToken = (response.data as any).idToken || null;
       } else if ((response as any).user) {
         // Old format fallback
         email = (response as any).user.email;
         name = (response as any).user.name || 'Vendor';
+        idToken = (response as any).idToken || null;
       } else {
         throw new Error('Could not retrieve user info from Google. Please try again.');
       }
 
-      // Check if vendor exists in Firestore
-      const q = query(collection(db, 'vendors'));
-      const querySnapshot = await getDocs(q);
-      let existingVendor = querySnapshot.docs.find(doc => doc.data().email === email);
+      // Fallback: try getTokens() if idToken wasn't in the response
+      if (!idToken) {
+        try {
+          const tokens = await GoogleSignin.getTokens();
+          idToken = tokens.idToken;
+        } catch (e) {
+          console.warn('Could not retrieve tokens via getTokens():', e);
+        }
+      }
+
+      if (!idToken) {
+        throw new Error('Could not obtain Google ID token. Please try signing in again.');
+      }
+
+      // Authenticate with Firebase Auth using the Google credential
+      const credential = GoogleAuthProvider.credential(idToken);
+      await signInWithCredential(auth, credential);
+      const uid = auth.currentUser!.uid;
+
+      // Use auth UID as the vendor document ID (matches Firestore isOwner rule)
+      const vendorDocRef = doc(db, 'vendors', uid);
+      const vendorDocSnap = await getDoc(vendorDocRef);
 
       let profile: VendorProfile;
       let pushToken = '';
@@ -263,14 +309,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pushToken = await registerForPushNotificationsAsync() || '';
       } catch (e) {}
 
-      if (existingVendor) {
-        profile = { id: existingVendor.id, ...existingVendor.data() } as VendorProfile;
+      if (vendorDocSnap.exists()) {
+        profile = { id: uid, ...vendorDocSnap.data() } as VendorProfile;
         if (pushToken && profile.pushToken !== pushToken) {
-          await updateDoc(doc(db, 'vendors', existingVendor.id), { pushToken });
+          await updateDoc(vendorDocRef, { pushToken });
           profile.pushToken = pushToken;
         }
       } else {
-        // Create new vendor in Firestore
+        // Create new vendor with auth UID as document ID
         const newVendorData = {
           email,
           name,
@@ -278,8 +324,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           whatsappNumber: '+911234567890',
           pushToken
         };
-        const docRef = await addDoc(collection(db, 'vendors'), newVendorData);
-        profile = { id: docRef.id, ...newVendorData };
+        await setDoc(vendorDocRef, newVendorData);
+        profile = { id: uid, ...newVendorData };
       }
 
       setVendorProfile(profile);
@@ -289,7 +335,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('Google Sign-In Error:', error);
       Alert.alert(
         'Login Failed', 
-        `Could not connect to Google. Please try again.\nError: ${error.message || 'Unknown'}`
+        `Could not connect to Google.\nError: ${error.message || 'Unknown'}`
       );
     }
   };
@@ -358,7 +404,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await AsyncStorage.setItem('vendorProfile', JSON.stringify(updatedProfile));
 
       // 3. Update only trips belonging to this vendor in Firestore
-      const { where } = await import('firebase/firestore');
       const vendorTripsQ = query(collection(db, 'trips'), where('vendorId', '==', vendorProfile.id));
       const vendorTripsSnap = await getDocs(vendorTripsQ);
       for (const tripDoc of vendorTripsSnap.docs) {
@@ -386,16 +431,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const bookTrip = async (booking: Omit<Booking, 'id'>) => {
+    // Ensure Firebase Auth is established (anonymous auth for guest bookings)
+    if (!auth.currentUser) {
+      await signInAnonymously(auth);
+    }
+
     const tripRef = doc(db, 'trips', booking.tripId);
     // Bug Fix #4: Use getDoc for single-document fetch instead of scanning all trips
-    const { getDoc } = await import('firebase/firestore');
     const tripDocSnap = await getDoc(tripRef);
     let finalBooking = { ...booking };
 
     if (tripDocSnap.exists()) {
       const trip = tripDocSnap.data() as Trip;
       // Try to find the vendorId based on WhatsApp number
-      const { where } = await import('firebase/firestore');
       const vendorQ = query(collection(db, 'vendors'), where('whatsappNumber', '==', trip.vendorWhatsApp));
       const vendorSnap = await getDocs(vendorQ);
       let vendorToken = '';
@@ -409,11 +457,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Save booking to a separate 'bookings' collection
       await addDoc(collection(db, 'bookings'), finalBooking);
 
-      // Increment bookedSeats for the relevant batch
-      const updatedBatches = trip.batches.map((b: any) =>
-        b.id === booking.batchId ? { ...b, bookedSeats: b.bookedSeats + (booking.seats || 1) } : b
-      );
-      await updateDoc(tripRef, { batches: updatedBatches });
+      // Increment bookedSeats for the relevant batch (best-effort)
+      try {
+        const updatedBatches = trip.batches.map((b: any) =>
+          b.id === booking.batchId ? { ...b, bookedSeats: b.bookedSeats + (booking.seats || 1) } : b
+        );
+        await updateDoc(tripRef, { batches: updatedBatches });
+      } catch (seatErr) {
+        console.warn('Could not update seat count (non-fatal):', seatErr);
+      }
 
       // Send Push Notification to Vendor
       if (vendorToken) {

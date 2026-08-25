@@ -81,10 +81,13 @@ export default function RootLayout() {
             }} 
           />
           <Stack.Screen name="trip/[id]" options={{ title: 'Trip Details', headerBackTitle: 'Back' }} />
+          <Stack.Screen name="checkout/[id]" options={{ title: 'Checkout', headerBackTitle: 'Back' }} />
           <Stack.Screen name="vendor-dashboard" options={{ title: 'Vendor Portal', presentation: 'modal' }} />
           <Stack.Screen name="vendor-live/[id]" options={{ title: 'Live Tracking' }} />
+          <Stack.Screen name="start-trip/[id]" options={{ title: 'Start Trip' }} />
           <Stack.Screen name="booking-confirmation" options={{ title: 'Booking Confirmation' }} />
           <Stack.Screen name="booking-status" options={{ title: 'Booking Status' }} />
+          <Stack.Screen name="my-bookings" options={{ title: 'My Bookings' }} />
         </Stack>
       </AppProvider>
     </ErrorBoundary>

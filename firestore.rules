@@ -46,10 +46,13 @@ service cloud.firestore {
       // Authenticated users can create trips — must include valid required fields
       allow create: if isAuthenticated() && hasRequiredTripFields();
 
-      // Only the owning vendor can update — vendorId cannot change
-      allow update: if isAuthenticated()
+      // Only the owning vendor can do full updates — vendorId cannot change
+      allow update: if (isAuthenticated()
                     && resource.data.vendorId == request.auth.uid
-                    && vendorIdUnchanged();
+                    && vendorIdUnchanged())
+                    // OR: any authenticated user can update ONLY batches (booking seat count)
+                    || (isAuthenticated()
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['batches']));
 
       // Only the owning vendor can delete
       allow delete: if isAuthenticated()
