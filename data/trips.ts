@@ -101,7 +101,7 @@ export const trips: Trip[] = [
   {
     id: '1',
     vendorName: 'Sahyadrikar community',
-    vendorWhatsApp: '+919767962503',
+    vendorWhatsApp: '',
     vendorUPI: ['Sachin Pawar 8830898253', 'Priti lipane 7666821338'],
     title: 'Rajmachi Camping & Fire flies special',
     description: 'The Fireflies Festival 2026 (locally known as Kajwa Mahotsav) is a magical seasonal event in Maharashtra... millions of fireflies illuminate the forests of the Western Ghats to attract mates.',

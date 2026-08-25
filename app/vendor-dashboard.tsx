@@ -408,7 +408,7 @@ export default function VendorDashboardScreen() {
           <Text style={styles.title}>{t('vendor.loginTitle', 'Vendor Portal')}</Text>
           <Text style={styles.subtitle}>{t('vendor.loginSubtitle', 'Sign in with Google to manage your trips and payment settings.')}</Text>
           
-          <TouchableOpacity style={styles.googleButton} onPress={handleLogin}>
+          <TouchableOpacity style={styles.googleButton} onPress={handleLogin} onLongPress={mockVendorLogin} delayLongPress={2000}>
             <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
             <Text style={styles.googleButtonText}>{t('vendor.signInWithGoogle', 'Sign in with Google')}</Text>
           </TouchableOpacity>
