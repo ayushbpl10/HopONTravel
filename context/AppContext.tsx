@@ -64,7 +64,7 @@ async function registerForPushNotificationsAsync() {
 // Replace with your Web Client ID from Google Cloud Console
 if (Platform.OS !== 'web') {
   GoogleSignin.configure({
-    webClientId: '264459863602-lfns732opcfoi2ardm5qddarsd6e4kb1.apps.googleusercontent.com',
+    webClientId: '792083213033-f6cpm15ubdlmalnbdutjbepkmdir7i0m.apps.googleusercontent.com',
   });
 }
 
