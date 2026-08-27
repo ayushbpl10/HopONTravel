@@ -27,14 +27,9 @@ export default function VendorLiveDashboard() {
   const { t } = useTranslation();
 
   const [captainLoc, setCaptainLoc] = useState<{ latitude: number, longitude: number } | null>(null);
-  const [lastPickupCrossedAt, setLastPickupCrossedAt] = useState<number | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [isBroadcasting, setIsBroadcasting] = useState(true);
-
-  const lastPickup = trip?.pickupPoints && trip.pickupPoints.length > 0 
-    ? trip.pickupPoints[trip.pickupPoints.length - 1] 
-    : null;
 
   useEffect(() => {
     (async () => {
@@ -177,8 +172,8 @@ export default function VendorLiveDashboard() {
         return;
       }
       
-      const fileUri = `${FileSystem.documentDirectory}manifest_${safeTitle}.csv`;
-      await FileSystem.writeAsStringAsync(fileUri, csvString, { encoding: FileSystem.EncodingType.UTF8 });
+      const fileUri = `${(FileSystem as any).documentDirectory}manifest_${safeTitle}.csv`;
+      await FileSystem.writeAsStringAsync(fileUri, csvString, { encoding: (FileSystem as any).EncodingType.UTF8 });
       
       if (!(await Sharing.isAvailableAsync())) {
         Alert.alert('Error', 'Sharing is not available on your device');
@@ -196,7 +191,7 @@ export default function VendorLiveDashboard() {
   };
 
   const togglePaymentStatus = async (bookingId: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'paid' ? 'pending' : 'paid';
+    const newStatus = currentStatus === 'confirmed' ? 'pending' : 'confirmed';
     await updateBookingStatus(bookingId, newStatus as 'pending' | 'confirmed');
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus as any } : b));
   };
@@ -277,12 +272,12 @@ export default function VendorLiveDashboard() {
               <Text style={styles.bookingDetails}>{item.seats || 1} Seat(s) | ₹{item.totalPrice}</Text>
             </View>
             <TouchableOpacity 
-              style={[styles.paidToggleBtn, item.status === 'paid' && { backgroundColor: '#4ade80', borderColor: '#4ade80' }]} 
+              style={[styles.paidToggleBtn, item.status === 'confirmed' && { backgroundColor: '#4ade80', borderColor: '#4ade80' }]} 
               onPress={() => togglePaymentStatus(item.id, item.status)}
             >
-              <FontAwesome name={item.status === 'paid' ? 'check' : 'clock-o'} size={14} color={item.status === 'paid' ? 'white' : '#f59e0b'} style={{ marginRight: 6 }} />
-              <Text style={[styles.paidToggleText, item.status === 'paid' && { color: 'white' }]}>
-                {item.status === 'paid' ? 'Paid' : 'Pending'}
+              <FontAwesome name={item.status === 'confirmed' ? 'check' : 'clock-o'} size={14} color={item.status === 'confirmed' ? 'white' : '#f59e0b'} style={{ marginRight: 6 }} />
+              <Text style={[styles.paidToggleText, item.status === 'confirmed' && { color: 'white' }]}>
+                {item.status === 'confirmed' ? 'Paid' : 'Pending'}
               </Text>
             </TouchableOpacity>
           </View>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { db } from '../config/firebase';
@@ -6,13 +6,40 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Booking } from '../data/trips';
 import { Stack, router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import { useAppContext } from '../context/AppContext';
 
 export default function BookingStatusScreen() {
+  const { userProfile, loginWithGoogle, logout } = useAppContext();
   const [searchId, setSearchId] = useState('');
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState<Booking | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  
+  const [userBookings, setUserBookings] = useState<Booking[]>([]);
+  const [loadingUserBookings, setLoadingUserBookings] = useState(false);
+  
   const { t } = useTranslation();
+
+  useEffect(() => {
+    const fetchUserBookings = async () => {
+      if (userProfile?.role === 'traveller' && userProfile.email) {
+        setLoadingUserBookings(true);
+        try {
+          const q = query(collection(db, 'bookings'), where('travelerEmail', '==', userProfile.email));
+          const snap = await getDocs(q);
+          const data: Booking[] = [];
+          snap.forEach(doc => data.push({ id: doc.id, ...doc.data() } as Booking));
+          data.sort((a, b) => b.createdAt - a.createdAt);
+          setUserBookings(data);
+        } catch (e) {
+          console.error("Error fetching user bookings", e);
+        } finally {
+          setLoadingUserBookings(false);
+        }
+      }
+    };
+    fetchUserBookings();
+  }, [userProfile]);
 
   const handleSearch = async () => {
     if (!searchId.trim()) {
@@ -50,6 +77,84 @@ export default function BookingStatusScreen() {
     }
   };
 
+  const renderTicket = (b: Booking) => (
+    <View style={styles.ticket} key={b.id}>
+      <View style={[styles.ticketHeader, b.status === 'pending' && { backgroundColor: '#f59e0b' }, b.status === 'failed' && { backgroundColor: '#ef4444' }, b.status === 'cancelled' && { backgroundColor: '#64748b' }]}>
+        <Text style={styles.ticketHeaderText}>BOOKING DETAILS</Text>
+        <View style={styles.confirmedBadge}>
+          <FontAwesome 
+            name={b.status === 'confirmed' ? "check-circle" : b.status === 'pending' ? "clock-o" : "times-circle"} 
+            size={14} 
+            color={b.status === 'confirmed' ? "#22c55e" : b.status === 'pending' ? "#f59e0b" : "#dc2626"} 
+          />
+          <Text style={[styles.confirmedBadgeText, b.status === 'pending' && { color: '#f59e0b' }, (b.status === 'failed' || b.status === 'cancelled') && { color: '#dc2626' }]}>
+            {b.status.toUpperCase()}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.dashedDivider} />
+
+      <View style={styles.row}>
+        <Text style={styles.rowLabel}>Traveler Name</Text>
+        <Text style={styles.rowValue}>{b.travelerName}</Text>
+      </View>
+      <View style={styles.row}>
+        <Text style={styles.rowLabel}>Package</Text>
+        <Text style={styles.rowValue}>{b.packageName}</Text>
+      </View>
+      <View style={styles.row}>
+        <Text style={styles.rowLabel}>Seats</Text>
+        <Text style={styles.rowValue}>{b.seats || 1}</Text>
+      </View>
+
+      <View style={styles.dashedDivider} />
+
+      <View style={styles.row}>
+        <Text style={styles.totalLabel}>Total Amount</Text>
+        <Text style={styles.totalValue}>₹{b.totalPrice}</Text>
+      </View>
+
+      <View style={styles.ticketNotch}>
+        <View style={styles.notchLeft} />
+        <View style={styles.notchLine} />
+        <View style={styles.notchRight} />
+      </View>
+
+      <View style={styles.bookingIdRow}>
+        <Text style={styles.bookingIdLabel}>Booking ID</Text>
+        <Text style={styles.bookingId}>{b.bookingId || b.id}</Text>
+      </View>
+      
+      {b.status === 'pending' && (
+        <View style={[styles.infoBox, { backgroundColor: '#fef3c7' }]}>
+          <FontAwesome name="info-circle" size={16} color="#d97706" />
+          <Text style={[styles.infoText, { color: '#b45309' }]}>
+            Your payment is pending manual verification. If you haven&apos;t paid yet, please contact the vendor.
+          </Text>
+        </View>
+      )}
+      
+      {b.status === 'confirmed' && (
+        <View style={[styles.infoBox, { backgroundColor: '#dcfce7' }]}>
+          <FontAwesome name="check-circle" size={16} color="#16a34a" />
+          <Text style={[styles.infoText, { color: '#15803d' }]}>
+            Booking Confirmed! Show this ID to your captain on departure day.
+          </Text>
+        </View>
+      )}
+
+      {b.status === 'failed' && (
+        <View style={[styles.infoBox, { backgroundColor: '#fee2e2' }]}>
+          <FontAwesome name="times-circle" size={16} color="#dc2626" />
+          <Text style={[styles.infoText, { color: '#b91c1c' }]}>
+            Payment verification failed. Please contact support.
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+
   return (
     <>
       <Stack.Screen options={{ title: 'Booking Status', headerBackTitle: 'Back' }} />
@@ -81,83 +186,46 @@ export default function BookingStatusScreen() {
         </View>
 
         {/* Result Section */}
-        {booking && (
-          <View style={styles.ticket}>
-            <View style={[styles.ticketHeader, booking.status === 'pending' && { backgroundColor: '#f59e0b' }, booking.status === 'failed' && { backgroundColor: '#ef4444' }, booking.status === 'cancelled' && { backgroundColor: '#64748b' }]}>
-              <Text style={styles.ticketHeaderText}>BOOKING DETAILS</Text>
-              <View style={styles.confirmedBadge}>
-                <FontAwesome 
-                  name={booking.status === 'confirmed' ? "check-circle" : booking.status === 'pending' ? "clock-o" : "times-circle"} 
-                  size={14} 
-                  color={booking.status === 'confirmed' ? "#22c55e" : booking.status === 'pending' ? "#f59e0b" : "#dc2626"} 
-                />
-                <Text style={[styles.confirmedBadgeText, booking.status === 'pending' && { color: '#f59e0b' }, (booking.status === 'failed' || booking.status === 'cancelled') && { color: '#dc2626' }]}>
-                  {booking.status.toUpperCase()}
-                </Text>
-              </View>
-            </View>
+        {booking && renderTicket(booking)}
 
-            <View style={styles.dashedDivider} />
+        <View style={styles.divider} />
 
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Traveler Name</Text>
-              <Text style={styles.rowValue}>{booking.travelerName}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Phone Number</Text>
-              <Text style={styles.rowValue}>{booking.travelerPhone}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Package</Text>
-              <Text style={styles.rowValue}>{booking.packageName}</Text>
-            </View>
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Seats</Text>
-              <Text style={styles.rowValue}>{booking.seats || 1}</Text>
-            </View>
+        {/* SSO Login Section */}
+        {!userProfile && (
+          <View style={styles.ssoCard}>
+            <FontAwesome name="user-circle" size={30} color="#4a5568" style={{ marginBottom: 10 }} />
+            <Text style={styles.title}>Track All Your Trips</Text>
+            <Text style={styles.subtitle}>Log in with your email to automatically track all your past and upcoming bookings.</Text>
+            <TouchableOpacity style={styles.googleButton} onPress={() => loginWithGoogle('traveller')}>
+              <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
+              <Text style={styles.googleButtonText}>Sign in with Google</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-            <View style={styles.dashedDivider} />
+        {userProfile && userProfile.role === 'vendor' && (
+          <View style={styles.ssoCard}>
+            <Text style={styles.title}>Vendor Account</Text>
+            <Text style={styles.subtitle}>You are logged in as a Vendor. To see trips booked for you, go to the Vendor Portal.</Text>
+          </View>
+        )}
 
-            <View style={styles.row}>
-              <Text style={styles.totalLabel}>Total Amount</Text>
-              <Text style={styles.totalValue}>₹{booking.totalPrice}</Text>
-            </View>
-
-            <View style={styles.ticketNotch}>
-              <View style={styles.notchLeft} />
-              <View style={styles.notchLine} />
-              <View style={styles.notchRight} />
-            </View>
-
-            <View style={styles.bookingIdRow}>
-              <Text style={styles.bookingIdLabel}>Booking ID</Text>
-              <Text style={styles.bookingId}>{booking.bookingId || booking.id}</Text>
+        {userProfile && userProfile.role === 'traveller' && (
+          <View style={{ marginTop: 10 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+              <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#1a1a1a' }}>My Bookings</Text>
+              <TouchableOpacity onPress={logout}>
+                <Text style={{ color: '#00b0ff', fontWeight: '600' }}>Logout</Text>
+              </TouchableOpacity>
             </View>
             
-            {booking.status === 'pending' && (
-              <View style={[styles.infoBox, { backgroundColor: '#fef3c7' }]}>
-                <FontAwesome name="info-circle" size={16} color="#d97706" />
-                <Text style={[styles.infoText, { color: '#b45309' }]}>
-                  Your payment is pending manual verification. If you haven't paid yet, please contact the vendor.
-                </Text>
-              </View>
-            )}
-            
-            {booking.status === 'confirmed' && (
-              <View style={[styles.infoBox, { backgroundColor: '#dcfce7' }]}>
-                <FontAwesome name="check-circle" size={16} color="#16a34a" />
-                <Text style={[styles.infoText, { color: '#15803d' }]}>
-                  Booking Confirmed! Show this ID to your captain on departure day.
-                </Text>
-              </View>
-            )}
-
-            {booking.status === 'failed' && (
-              <View style={[styles.infoBox, { backgroundColor: '#fee2e2' }]}>
-                <FontAwesome name="times-circle" size={16} color="#dc2626" />
-                <Text style={[styles.infoText, { color: '#b91c1c' }]}>
-                  Payment verification failed. Please contact support.
-                </Text>
+            {loadingUserBookings ? (
+              <ActivityIndicator size="large" color="#00b0ff" style={{ marginTop: 20 }} />
+            ) : userBookings.length > 0 ? (
+              userBookings.map(b => renderTicket(b))
+            ) : (
+              <View style={{ alignItems: 'center', padding: 20 }}>
+                <Text style={{ color: '#718096' }}>No bookings found for {userProfile.email}.</Text>
               </View>
             )}
           </View>
@@ -171,6 +239,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f0f4f8' },
   content: { padding: 20 },
   searchCard: { backgroundColor: '#fff', padding: 24, borderRadius: 16, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5, marginBottom: 20 },
+  ssoCard: { backgroundColor: '#f8f9fa', padding: 24, borderRadius: 16, alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 20 },
   title: { fontSize: 22, fontWeight: 'bold', color: '#1a1a1a', marginBottom: 8, textAlign: 'center' },
   subtitle: { fontSize: 14, color: '#718096', textAlign: 'center', marginBottom: 20, lineHeight: 20 },
   inputWrapper: { flexDirection: 'row', width: '100%', gap: 10 },
@@ -178,8 +247,11 @@ const styles = StyleSheet.create({
   searchBtn: { backgroundColor: '#00b0ff', paddingHorizontal: 20, justifyContent: 'center', alignItems: 'center', borderRadius: 8 },
   searchBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   errorText: { color: '#e53e3e', marginTop: 10, fontSize: 14, alignSelf: 'flex-start' },
+  googleButton: { backgroundColor: '#DB4437', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, width: '100%' },
+  googleButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  divider: { height: 1, backgroundColor: '#cbd5e0', marginVertical: 20 },
 
-  // Ticket styles (shared with booking-confirmation)
+  // Ticket styles
   ticket: { width: '100%', backgroundColor: '#fff', borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 8, overflow: 'hidden', marginBottom: 20 },
   ticketHeader: { backgroundColor: '#00b0ff', paddingHorizontal: 20, paddingVertical: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   ticketHeaderText: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 1 },

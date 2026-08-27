@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert, Dimensions, Modal, TextInput, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert, Dimensions, Modal, TextInput } from 'react-native';
 import { Image } from 'expo-image';
-const { width } = Dimensions.get('window');
 import { useLocalSearchParams, router } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -12,9 +11,11 @@ import { getDistance } from 'geolib';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TripMap from '../../components/TripMap';
 
+const { width } = Dimensions.get('window');
+
 export default function TripDetailScreen() {
   const { id } = useLocalSearchParams();
-  const { trips, vendorProfile, bookTrip } = useAppContext();
+  const { trips, userProfile, bookTrip } = useAppContext();
   const trip = trips.find((t) => t.id === id);
   const { liveState, guestId, joinAsGuest, updateGuestLocation } = useLiveTracking(id as string);
   const { t } = useTranslation();
@@ -22,7 +23,7 @@ export default function TripDetailScreen() {
   const [isJoinModalVisible, setIsJoinModalVisible] = useState(false);
   const [guestName, setGuestName] = useState('');
   const [isTracking, setIsTracking] = useState(false);
-  const [locationSubscription, setLocationSubscription] = useState<Location.LocationSubscription | null>(null);
+  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
 
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
   const [selectedPackageName, setSelectedPackageName] = useState<string>('');
@@ -72,14 +73,14 @@ export default function TripDetailScreen() {
                 updateGuestLocation(storedGuestId, storedName, { latitude: loc.coords.latitude, longitude: loc.coords.longitude, updatedAt: Date.now() });
               }
             );
-            setLocationSubscription(sub);
+            locationSubscription.current = sub;
           }
         });
       }
     });
 
     return () => {
-      if (locationSubscription) locationSubscription.remove();
+      if (locationSubscription.current) locationSubscription.current.remove();
     };
   }, []);
 
@@ -117,7 +118,7 @@ export default function TripDetailScreen() {
           updateGuestLocation(gId, guestName, { latitude: loc.coords.latitude, longitude: loc.coords.longitude, updatedAt: Date.now() });
         }
       );
-      setLocationSubscription(sub);
+      locationSubscription.current = sub;
       setIsTracking(true);
       
       // Persist tracking state
@@ -202,20 +203,20 @@ export default function TripDetailScreen() {
                 isTracking={isTracking} 
               />
               {!liveState.captain && (
-                <View style={styles.mapPlaceholder}><Text>Waiting for Captain's location...</Text></View>
+                <View style={styles.mapPlaceholder}><Text>Waiting for Captain&apos;s location...</Text></View>
               )}
             </View>
 
             {!isTracking ? (
               <View>
                 <TouchableOpacity 
-                  style={[styles.joinBtn, vendorProfile ? { opacity: 0.5 } : {}]} 
-                  disabled={!!vendorProfile}
+                  style={[styles.joinBtn, userProfile?.role === 'vendor' ? { opacity: 0.5 } : {}]} 
+                  disabled={userProfile?.role === 'vendor'}
                   onPress={() => setIsJoinModalVisible(true)}
                 >
                   <Text style={styles.joinBtnText}>{t('tripDetails.joinTrip', 'Join Trip & Share Location')}</Text>
                 </TouchableOpacity>
-                {vendorProfile && (
+                {userProfile?.role === 'vendor' && (
                   <Text style={{ textAlign: 'center', marginTop: 8, color: '#e53e3e', fontSize: 12 }}>
                     {t('tripDetails.vendorJoinWarning', 'You are logged in as a Vendor. Please sign out to join a trip as a traveller.')}
                   </Text>

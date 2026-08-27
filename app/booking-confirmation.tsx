@@ -1,9 +1,8 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Share, Linking } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams, router , Stack } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
 export default function BookingConfirmationScreen() {

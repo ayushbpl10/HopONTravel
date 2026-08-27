@@ -97,5 +97,14 @@ service cloud.firestore {
     // ─── RATINGS ────────────────────────────────────────────────────
     // Stored on trips via arrayUnion — covered by trips rules above.
     // If you split into a subcollection later, add rules here.
+
+    // ─── ERROR LOGS ─────────────────────────────────────────────────
+    // Append-only error/crash log collection.
+    // Anyone (even unauthenticated users) can write so crash reports
+    // are never lost. No client-side read allowed (admin SDK only).
+    match /error_logs/{logId} {
+      allow create: if true;   // Write-only: crash/error reports from app
+      allow read, update, delete: if false; // Admin access only via Firebase Console
+    }
   }
 }

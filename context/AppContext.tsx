@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { Trip, Rating, Booking, trips as initialTrips } from '../data/trips';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, auth } from '../config/firebase';
@@ -7,12 +7,33 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform, Alert } from 'react-native';
+import { Logger } from '../utils/logger';
+import { 
+  collection, 
+  onSnapshot, 
+  doc, 
+  setDoc,
+  getDoc,
+  updateDoc, 
+  query, 
+  where,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  arrayUnion,
+  limit,
+  startAfter,
+  DocumentData,
+  QueryDocumentSnapshot
+} from 'firebase/firestore';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -39,24 +60,6 @@ async function registerForPushNotificationsAsync() {
   }
   return token;
 }
-import { 
-  collection, 
-  onSnapshot, 
-  doc, 
-  setDoc,
-  getDoc,
-  updateDoc, 
-  query, 
-  where,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  arrayUnion,
-  limit,
-  startAfter,
-  DocumentData,
-  QueryDocumentSnapshot
-} from 'firebase/firestore';
 
 // Replace with your Web Client ID from Google Cloud Console
 if (Platform.OS !== 'web') {
@@ -65,24 +68,25 @@ if (Platform.OS !== 'web') {
   });
 }
 
-interface VendorProfile {
+interface UserProfile {
   id: string; 
   email: string;
   name: string;
   upiId: string;
   whatsappNumber: string;
   pushToken?: string;
+  role?: 'vendor' | 'traveller';
 }
 
 interface AppContextType {
   trips: Trip[];
   vendorBookings: Booking[];
   loading: boolean;
-  vendorProfile: VendorProfile | null;
-  loginWithGoogle: () => Promise<void>;
+  userProfile: UserProfile | null;
+  loginWithGoogle: (role: 'vendor' | 'traveller') => Promise<void>;
   mockVendorLogin: () => Promise<void>;
   logout: () => Promise<void>;
-  updateVendorProfile: (updates: Partial<VendorProfile>) => void;
+  updateUserProfile: (updates: Partial<UserProfile>) => void;
   updateTrip: (tripId: string, updates: Partial<Trip>) => void;
   addTrip: (trip: Omit<Trip, 'id'>) => Promise<void>;
   deleteTrip: (tripId: string) => Promise<void>;
@@ -100,15 +104,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [trips, setTrips] = useState<Trip[]>([]);
   const [vendorBookings, setVendorBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
-  const [vendorProfile, setVendorProfile] = useState<VendorProfile | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMoreTrips, setHasMoreTrips] = useState(true);
 
-  // 1. Initial Load of Trips (Paginated)
-  const loadInitialTrips = async () => {
+  // 1. Initial Load of Trips (Paginated) - only 'published' trips
+  const loadInitialTrips = useCallback(async () => {
     try {
-      const q = query(collection(db, 'trips'), limit(10));
+      const q = query(collection(db, 'trips'), where('status', '==', 'published'), limit(10));
       const querySnapshot = await getDocs(q);
       
       const tripsData: Trip[] = [];
@@ -119,7 +123,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (tripsData.length === 0 && initialTrips.length > 0) {
         await seedInitialData();
         // After seeding, fetch again so the skeleton loader doesn't loop forever!
-        const q2 = query(collection(db, 'trips'), limit(10));
+        const q2 = query(collection(db, 'trips'), where('status', '==', 'published'), limit(10));
         const querySnapshot2 = await getDocs(q2);
         const tripsData2: Trip[] = [];
         querySnapshot2.forEach((docSnap) => {
@@ -136,7 +140,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       
       setTrips(tripsData);
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1]);
+      if (querySnapshot.docs.length > 0) {
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1]);
+      }
       setHasMoreTrips(querySnapshot.docs.length === 10);
       AsyncStorage.setItem('cached_trips', JSON.stringify(tripsData)).catch(() => {});
       setLoading(false);
@@ -144,7 +150,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error("Error loading trips:", error);
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     // Load offline cache first
@@ -159,7 +165,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }).catch(() => {});
 
     loadInitialTrips();
-  }, []);
+  }, [loadInitialTrips]);
 
   const refreshTrips = async () => {
     setLoading(true);
@@ -186,7 +192,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!lastVisible || !hasMoreTrips) return;
     
     try {
-      const q = query(collection(db, 'trips'), startAfter(lastVisible), limit(10));
+      const q = query(
+        collection(db, 'trips'),
+        where('status', '==', 'published'),
+        startAfter(lastVisible),
+        limit(10)
+      );
       const querySnapshot = await getDocs(q);
       
       const tripsData: Trip[] = [];
@@ -206,7 +217,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const seedInitialData = async () => {
+  const seedInitialData = useCallback(async () => {
     setLoading(true);
     console.log('Seeding initial data to Firestore...');
     try {
@@ -220,31 +231,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // 2. Load vendor profile from local storage (to maintain session)
   useEffect(() => {
     const loadSession = async () => {
       try {
-        const storedProfile = await AsyncStorage.getItem('vendorProfile');
+        const storedProfile = await AsyncStorage.getItem('userProfile');
         if (storedProfile) {
           const parsed = JSON.parse(storedProfile);
           // Direct lookup by vendor ID (which is now the auth UID)
           try {
             const vendorDocSnap = await getDoc(doc(db, 'vendors', parsed.id));
             if (vendorDocSnap.exists()) {
-              const profile = { id: vendorDocSnap.id, ...vendorDocSnap.data() } as VendorProfile;
-              setVendorProfile(profile);
-              loadVendorBookings(profile.id);
+              const profile = { id: vendorDocSnap.id, ...vendorDocSnap.data() } as UserProfile;
+              setUserProfile(profile);
+              if (profile.role === 'vendor') loadVendorBookings(profile.id);
             } else {
               // Vendor doc not found in Firestore, use cached data
-              setVendorProfile(parsed);
-              if (parsed.id) loadVendorBookings(parsed.id);
+              setUserProfile(parsed);
+              if (parsed.id && parsed.role === 'vendor') loadVendorBookings(parsed.id);
             }
           } catch (e) {
             // Firestore lookup failed (offline?), use cached data
-            setVendorProfile(parsed);
-            if (parsed.id) loadVendorBookings(parsed.id);
+            setUserProfile(parsed);
+            if (parsed.id && parsed.role === 'vendor') loadVendorBookings(parsed.id);
           }
         }
       } catch (e) {
@@ -254,7 +265,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     loadSession();
   }, []);
 
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (role: 'vendor' | 'traveller') => {
     try {
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();
@@ -267,14 +278,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let idToken: string | null = null;
 
       if ('type' in response && response.type === 'success' && response.data?.user) {
-        // New v13+ format
+        // New v13+ format: { type: 'success', data: { idToken, user: { email, name, ... } } }
         email = response.data.user.email;
-        name = response.data.user.name || 'Vendor';
+        name = response.data.user.name || (role === 'vendor' ? 'Vendor' : 'Traveller');
         idToken = (response.data as any).idToken || null;
       } else if ((response as any).user) {
         // Old format fallback
         email = (response as any).user.email;
-        name = (response as any).user.name || 'Vendor';
+        name = (response as any).user.name || (role === 'vendor' ? 'Vendor' : 'Traveller');
         idToken = (response as any).idToken || null;
       } else {
         throw new Error('Could not retrieve user info from Google. Please try again.');
@@ -303,34 +314,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const vendorDocRef = doc(db, 'vendors', uid);
       const vendorDocSnap = await getDoc(vendorDocRef);
 
-      let profile: VendorProfile;
+      let profile: UserProfile;
       let pushToken = '';
       try {
         pushToken = await registerForPushNotificationsAsync() || '';
       } catch (e) {}
 
       if (vendorDocSnap.exists()) {
-        profile = { id: uid, ...vendorDocSnap.data() } as VendorProfile;
+        profile = { id: uid, ...vendorDocSnap.data() } as UserProfile;
+        
+        let updates: any = {};
         if (pushToken && profile.pushToken !== pushToken) {
-          await updateDoc(vendorDocRef, { pushToken });
+          updates.pushToken = pushToken;
           profile.pushToken = pushToken;
         }
+        
+        // Upgrade role if logging in as vendor but currently a traveller
+        if (role === 'vendor' && profile.role !== 'vendor') {
+          updates.role = 'vendor';
+          profile.role = 'vendor';
+        }
+        // If they log in as traveller, keep their existing role (don't downgrade vendors)
+        else if (role === 'traveller' && !profile.role) {
+          updates.role = 'traveller';
+          profile.role = 'traveller';
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await updateDoc(vendorDocRef, updates);
+        }
       } else {
-        // Create new vendor with auth UID as document ID
+        // Create new user with auth UID as document ID
         const newVendorData = {
           email,
           name,
           upiId: 'merchant@bank',
           whatsappNumber: '+911234567890',
-          pushToken
+          pushToken,
+          role
         };
         await setDoc(vendorDocRef, newVendorData);
         profile = { id: uid, ...newVendorData };
       }
 
-      setVendorProfile(profile);
-      await AsyncStorage.setItem('vendorProfile', JSON.stringify(profile));
-      loadVendorBookings(profile.id);
+      setUserProfile(profile);
+      Logger.setUserContext(profile.id, profile.email);
+      await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
+      if (profile.role === 'vendor') {
+        loadVendorBookings(profile.id);
+      }
     } catch (error: any) {
       console.error('Google Sign-In Error:', error);
       Alert.alert(
@@ -357,23 +389,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const querySnapshot = await getDocs(q);
       let existingVendor = querySnapshot.docs.find(doc => doc.data().email === email);
 
-      let profile: VendorProfile;
+      let profile: UserProfile;
 
       if (existingVendor) {
-        profile = { id: existingVendor.id, ...existingVendor.data() } as VendorProfile;
+        profile = { id: existingVendor.id, ...existingVendor.data() } as UserProfile;
       } else {
         const newVendorRef = await addDoc(collection(db, 'vendors'), {
           email,
           name,
           upiId: '',
           whatsappNumber: '',
-          pushToken: ''
+          pushToken: '',
+          role: 'vendor'
         });
-        profile = { id: newVendorRef.id, email, name, upiId: '', whatsappNumber: '' };
+        profile = { id: newVendorRef.id, email, name, upiId: '', whatsappNumber: '', role: 'vendor' };
       }
 
-      await AsyncStorage.setItem('vendorProfile', JSON.stringify(profile));
-      setVendorProfile(profile);
+      await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
+      setUserProfile(profile);
       loadVendorBookings(profile.id);
       Alert.alert('Dev Login', 'Successfully mocked login on Web!');
     } catch (e) {
@@ -387,24 +420,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (error) {
       console.error(error);
     }
-    setVendorProfile(null);
-    await AsyncStorage.removeItem('vendorProfile');
+    setUserProfile(null);
+    Logger.setUserContext(null, null);
+    await AsyncStorage.removeItem('userProfile');
   };
 
-  const updateVendorProfile = async (updates: Partial<VendorProfile>) => {
-    if (vendorProfile) {
-      const updatedProfile = { ...vendorProfile, ...updates };
+  const updateUserProfile = async (updates: Partial<UserProfile>) => {
+    if (userProfile) {
+      const updatedProfile = { ...userProfile, ...updates };
       
       // 1. Update Firestore
-      const vendorRef = doc(db, 'vendors', vendorProfile.id);
+      const vendorRef = doc(db, 'vendors', userProfile.id);
       await updateDoc(vendorRef, updates);
 
       // 2. Update Local State
-      setVendorProfile(updatedProfile);
-      await AsyncStorage.setItem('vendorProfile', JSON.stringify(updatedProfile));
+      setUserProfile(updatedProfile);
+      await AsyncStorage.setItem('userProfile', JSON.stringify(updatedProfile));
 
       // 3. Update only trips belonging to this vendor in Firestore
-      const vendorTripsQ = query(collection(db, 'trips'), where('vendorId', '==', vendorProfile.id));
+      const vendorTripsQ = query(collection(db, 'trips'), where('vendorId', '==', userProfile.id));
       const vendorTripsSnap = await getDocs(vendorTripsQ);
       for (const tripDoc of vendorTripsSnap.docs) {
         await updateDoc(doc(db, 'trips', tripDoc.id), {
@@ -496,8 +530,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateBookingStatus = async (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled' | 'failed') => {
     const bookingRef = doc(db, 'bookings', bookingId);
     await updateDoc(bookingRef, { status });
-    if (vendorProfile) {
-      loadVendorBookings(vendorProfile.id);
+    if (userProfile && userProfile.role === 'vendor') {
+      loadVendorBookings(userProfile.id);
     }
   };
 
@@ -507,7 +541,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   return (
-    <AppContext.Provider value={{ trips, vendorBookings, loading, vendorProfile, loginWithGoogle, mockVendorLogin, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, submitRating, fetchMoreTrips, hasMoreTrips, refreshTrips }}>
+    <AppContext.Provider value={{ trips, vendorBookings, loading, userProfile, loginWithGoogle, mockVendorLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, submitRating, fetchMoreTrips, hasMoreTrips, refreshTrips }}>
       {children}
     </AppContext.Provider>
   );

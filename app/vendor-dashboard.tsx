@@ -11,6 +11,9 @@ import { uploadImage } from '../utils/uploadImage';
 import OllieLoading from '../components/OllieLoading';
 import { parseWhatsAppMessage, AIProvider, parseLocalHeuristics } from '../utils/aiParser';
 import { Logger } from '../utils/logger';
+import { db } from '../config/firebase';
+import { collection, addDoc } from 'firebase/firestore';
+
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTranslation } from 'react-i18next';
 
@@ -26,10 +29,10 @@ const LIMITS = {
 };
 
 export default function VendorDashboardScreen() {
-  const { trips, vendorProfile, loginWithGoogle, mockVendorLogin, logout, updateVendorProfile, updateTrip, addTrip, deleteTrip } = useAppContext();
-  const [upiInput, setUpiInput] = useState(vendorProfile?.upiId || '');
-  const [waInput, setWaInput] = useState(vendorProfile?.whatsappNumber || '');
-  const [nameInput, setNameInput] = useState(vendorProfile?.name || '');
+  const { trips, vendorBookings, updateBookingStatus, userProfile, loginWithGoogle, mockVendorLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip } = useAppContext();
+  const [upiInput, setUpiInput] = useState(userProfile?.upiId || '');
+  const [waInput, setWaInput] = useState(userProfile?.whatsappNumber || '');
+  const [nameInput, setNameInput] = useState(userProfile?.name || '');
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [activeTab, setActiveTab] = useState<'trips' | 'bookings'>('trips');
@@ -78,7 +81,7 @@ export default function VendorDashboardScreen() {
   }, []);
 
   const handleLogin = async () => {
-    await loginWithGoogle();
+    await loginWithGoogle('vendor');
   };
 
   const handleUpdateProfile = () => {
@@ -90,7 +93,7 @@ export default function VendorDashboardScreen() {
       Alert.alert('Invalid WhatsApp', 'Please include country code (e.g., +91...)');
       return;
     }
-    updateVendorProfile({ 
+    updateUserProfile({ 
       upiId: upiInput, 
       whatsappNumber: waInput,
       name: nameInput
@@ -257,10 +260,10 @@ export default function VendorDashboardScreen() {
         description: editDesc.trim(),
         batches: [{ id: Date.now().toString(), dateDuration: formattedDate, totalSeats: parseInt(editTotalSeats) || 0, bookedSeats: parseInt(editBookedSeats) || 0 }],
         images: finalImageUrls,
-        vendorName: vendorProfile?.name || '',
-        vendorId: vendorProfile?.id || '',
-        vendorUPI: [vendorProfile?.upiId || ''],
-        vendorWhatsApp: vendorProfile?.whatsappNumber || '',
+        vendorName: userProfile?.name || '',
+        vendorId: userProfile?.id || '',
+        vendorUPI: [userProfile?.upiId || ''],
+        vendorWhatsApp: userProfile?.whatsappNumber || '',
         addOns: [],
         pickupPoints: editPickupPoints.filter(p => p.location.trim() && p.time.trim()),
         itinerary: '',
@@ -357,27 +360,78 @@ export default function VendorDashboardScreen() {
       <Text style={styles.subtitle}>Help us improve or support the platform!</Text>
       
       <TouchableOpacity style={styles.actionButton} onPress={async () => {
-        const handleReport = async (text: string | null) => {
-          if (text) {
-            try {
-              await addTrip({ title: `REPORT: ${text.substring(0, 20)}`, description: text, vendorName: vendorProfile?.name || 'Unknown', vendorId: vendorProfile?.id || 'Unknown', vendorWhatsApp: 'system', vendorUPI: ['system'], images: [], batches: [{ id: '1', dateDuration: 'REPORT_DO_NOT_DELETE', totalSeats: 0, bookedSeats: 0 }], packages: [], addOns: [], pickupPoints: [], itinerary: '', inclusions: [], exclusions: [], thingsToCarry: [], cancellationPolicy: [], status: 'draft' } as any);
-              Alert.alert("Sent", "Your issue has been reported to the server.");
-            } catch (e) {
-              Alert.alert("Error", "Could not send report.");
+        const SUPPORT_EMAIL = 'abtohghoomle@gmail.com';
+
+        const submitReport = async (userDescription: string | null) => {
+          if (!userDescription?.trim()) {
+            Alert.alert('Empty Report', 'Please describe the issue before submitting.');
+            return;
+          }
+
+          const bundle = Logger.buildBundle(userDescription);
+
+          // 1. Save to Firestore error_logs
+          let firestoreSaved = false;
+          try {
+            await addDoc(collection(db, 'error_logs'), {
+              type: 'user_report',
+              userDescription,
+              bundle,
+              vendorId: userProfile?.id || null,
+              vendorName: userProfile?.name || null,
+              userEmail: userProfile?.email || null,
+              platform: Platform.OS,
+              timestamp: Date.now(),
+              logCount: Logger.getBuffer().length,
+            });
+            firestoreSaved = true;
+          } catch (e) {
+            Logger.error('Failed to save error report to Firestore', e);
+          }
+
+          // 2. Open email client with the full log bundle
+          const subject = encodeURIComponent(`[HopON Bug Report] ${new Date().toLocaleDateString('en-IN')} – ${userProfile?.name || 'Unknown Vendor'}`);
+          const body = encodeURIComponent(bundle);
+          const mailtoUrl = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
+
+          try {
+            const canOpen = await Linking.canOpenURL(mailtoUrl);
+            if (canOpen) {
+              await Linking.openURL(mailtoUrl);
+              Alert.alert(
+                firestoreSaved ? '✅ Report Saved & Email Ready' : '⚠️ Email Ready (Firestore unavailable)',
+                firestoreSaved
+                  ? 'Your report has been saved to our server. An email draft has also been opened — please send it!'
+                  : 'Could not save to server, but an email draft has been opened. Please send it so we can investigate.',
+              );
+            } else {
+              // Fallback: copy-able text alert if no email client
+              Alert.alert(
+                firestoreSaved ? '✅ Report Saved' : 'Error',
+                firestoreSaved
+                  ? `Your issue has been logged on the server.\n\nID: ${Date.now()}`
+                  : 'Could not save report. Please email us manually at:\n' + SUPPORT_EMAIL,
+              );
+            }
+          } catch (_e) {
+            if (firestoreSaved) {
+              Alert.alert('✅ Saved', 'Report saved to server. Could not open email client.');
+            } else {
+              Alert.alert('Error', 'Could not send report. Please contact: ' + SUPPORT_EMAIL);
             }
           }
         };
 
         if (Platform.OS === 'web') {
-          const text = window.prompt("Report Issue\n\nPlease describe the issue you are facing.");
-          handleReport(text);
+          const text = window.prompt('Report Issue\n\nDescribe the issue you are facing:');
+          submitReport(text);
         } else {
           Alert.prompt(
-            "Report Issue",
-            "Please describe the issue you are facing. Logs will be attached automatically.",
+            '🐛 Report Issue',
+            'Describe the issue. Logs will be automatically attached and emailed to our support team.',
             [
-              { text: "Cancel", style: "cancel" },
-              { text: "Submit", onPress: (text) => handleReport(text) }
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Send Report', onPress: (text?: string) => submitReport(text || null) },
             ]
           );
         }
@@ -400,7 +454,7 @@ export default function VendorDashboardScreen() {
     </View>
   );
 
-  if (!vendorProfile) {
+  if (!userProfile) {
     return (
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer}>
         <View style={[styles.loginCard, { marginBottom: 20 }]}>
@@ -408,7 +462,7 @@ export default function VendorDashboardScreen() {
           <Text style={styles.title}>{t('vendor.loginTitle', 'Vendor Portal')}</Text>
           <Text style={styles.subtitle}>{t('vendor.loginSubtitle', 'Sign in with Google to manage your trips and payment settings.')}</Text>
           
-          <TouchableOpacity style={styles.googleButton} onPress={handleLogin} onLongPress={mockVendorLogin} delayLongPress={2000}>
+          <TouchableOpacity style={styles.googleButton} onPress={() => loginWithGoogle('vendor')} onLongPress={mockVendorLogin} delayLongPress={2000}>
             <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
             <Text style={styles.googleButtonText}>{t('vendor.signInWithGoogle', 'Sign in with Google')}</Text>
           </TouchableOpacity>
@@ -429,15 +483,40 @@ export default function VendorDashboardScreen() {
     );
   }
 
+  // Guard: Travellers cannot access Vendor Portal
+  if (userProfile.role !== 'vendor') {
+    return (
+      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer}>
+        <View style={[styles.loginCard, { marginBottom: 20 }]}>
+          <FontAwesome name="lock" size={50} color="#cbd5e0" style={{ marginBottom: 20 }} />
+          <Text style={styles.title}>Access Denied</Text>
+          <Text style={styles.subtitle}>
+            You are currently logged in as a traveller. To access the Vendor Portal, upgrade your account.
+          </Text>
+          <TouchableOpacity style={styles.googleButton} onPress={() => loginWithGoogle('vendor')}>
+            <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
+            <Text style={styles.googleButtonText}>Upgrade to Vendor Account</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={{ marginTop: 20 }} onPress={logout}>
+            <Text style={{ color: '#00b0ff', fontWeight: 'bold', fontSize: 15 }}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+        {renderSupportFeedback()}
+      </ScrollView>
+    );
+  }
+
+  // At this point userProfile is definitely a vendor
+  const myTrips = trips.filter(t => t.vendorId === userProfile.id);
+
   return (
     <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer}>
       <View style={styles.dashboardCard}>
         <View style={styles.dashboardHeader}>
           <View>
-            <Text style={styles.welcomeText}>{t('vendor.welcome', 'Welcome')}, {vendorProfile.name}</Text>
-            <Text style={styles.emailText}>{vendorProfile.email}</Text>
+            <Text style={styles.welcomeText}>{t('vendor.welcome', 'Welcome')}, {userProfile.name}</Text>
+            <Text style={styles.emailText}>{userProfile.email}</Text>
             {(() => {
-              const myTrips = trips.filter(t => t.vendorName === vendorProfile?.name);
               let totalRating = 0;
               let totalReviews = 0;
               myTrips.forEach(t => {
@@ -506,7 +585,7 @@ export default function VendorDashboardScreen() {
             <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionTitle}>{t('vendor.yourTrips', 'Your Trips')}</Text>
-              <Text style={styles.limitText}>{trips.length} / {LIMITS.MAX_TRIPS_PER_VENDOR} trips used</Text>
+              <Text style={styles.limitText}>{myTrips.length} / {LIMITS.MAX_TRIPS_PER_VENDOR} trips used</Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <TouchableOpacity 
@@ -517,7 +596,7 @@ export default function VendorDashboardScreen() {
                  <Text style={styles.addNewBtnText}>{t('vendor.aiImport', 'AI Import')}</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={[styles.addNewBtn, trips.length >= LIMITS.MAX_TRIPS_PER_VENDOR && styles.disabledBtn]} 
+                style={[styles.addNewBtn, myTrips.length >= LIMITS.MAX_TRIPS_PER_VENDOR && styles.disabledBtn]} 
                 onPress={startAddingNew}
               >
                  <FontAwesome name="plus" size={14} color="white" />
@@ -526,10 +605,10 @@ export default function VendorDashboardScreen() {
             </View>
           </View>
           
-          {trips.length === 0 ? (
-            <Text style={styles.emptyText}>No trips listed yet. Click "Add New" to start!</Text>
+          {myTrips.length === 0 ? (
+            <Text style={styles.emptyText}>No trips listed yet. Click &quot;Add New&quot; to start!</Text>
           ) : (
-            trips.map((trip) => (
+            myTrips.map((trip) => (
               <TouchableOpacity 
                 key={trip.id} 
                 style={[styles.tripItem, trip.tripStatus === 'started' && { borderColor: '#4ade80', borderWidth: 2 }]} 

@@ -87,6 +87,9 @@ export default function HomeScreen() {
     const filter = PRICE_FILTERS[activeFilter];
     const query = searchQuery.toLowerCase();
     return trips.filter((trip) => {
+      // Only show published trips, exclude internal REPORT entries
+      if (trip.status !== 'published') return false;
+      if (trip.title?.startsWith('REPORT:')) return false;
       const matchesSearch = trip.title.toLowerCase().includes(query) || trip.description.toLowerCase().includes(query);
       const price = trip.packages && trip.packages.length > 0 ? trip.packages[0].price : 0;
       const matchesPrice = price >= (filter.min ?? 0) && price <= filter.max;

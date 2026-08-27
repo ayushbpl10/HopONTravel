@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ab Toh Ghoom Le",
     "slug": "HopONTravel",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/app_icon.png",
     "scheme": "hopontravel",
@@ -15,6 +15,8 @@
     },
     "android": {
       "package": "com.hopontravel.app",
+      "versionCode": 3,
+      "googleServicesFile": "./config/google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/app_icon.png"
@@ -62,7 +64,7 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location in the background to continuously track your trip.",
           "isIosBackgroundLocationEnabled": true,
-          "isAndroidBackgroundLocationEnabled": true
+          "isAndroidBackgroundLocationEnabled": false
         }
       ]
     ],

@@ -61,7 +61,7 @@ export const parseLocalHeuristics = (text: string): Partial<Trip>[] => {
   }
 
   // Find prices (e.g. 1499 ₹, Rs 1499, Pune - 1499)
-  const priceRegex = /(?:rs|₹|inr|-)\s*(\d+(?:,\d+)*)/gi;
+  const priceRegex = /(?:rs|₹|inr|-|:)\s*(\d+(?:,\d+)*)/gi;
   const foundPrices = new Set<number>();
   for (const line of lines) {
     let match;

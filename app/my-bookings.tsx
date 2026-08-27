@@ -37,14 +37,14 @@ const StarRating = ({ tripId, guestName, onSubmit }: { tripId: string, guestName
 };
 
 export default function MyBookingsScreen() {
-  const { vendorProfile, submitRating } = useAppContext();
+  const { userProfile, submitRating } = useAppContext();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const { t } = useTranslation();
 
   useEffect(() => {
     const fetchBookings = async () => {
-      if (!vendorProfile?.id) {
+      if (!userProfile?.id) {
         setLoading(false);
         return;
       }
@@ -57,7 +57,7 @@ export default function MyBookingsScreen() {
       } catch (e) {}
 
       try {
-        const q = query(collection(db, 'bookings'), where('userId', '==', vendorProfile.id));
+        const q = query(collection(db, 'bookings'), where('vendorId', '==', userProfile.id));
         const snap = await getDocs(q);
         const data: Booking[] = [];
         snap.forEach(doc => data.push({ id: doc.id, ...doc.data() } as Booking));
@@ -75,7 +75,7 @@ export default function MyBookingsScreen() {
       }
     };
     fetchBookings();
-  }, [vendorProfile]);
+  }, [userProfile]);
 
   if (loading) {
     return (
@@ -85,7 +85,7 @@ export default function MyBookingsScreen() {
     );
   }
 
-  if (!vendorProfile) {
+  if (!userProfile) {
     return (
       <View style={styles.center}>
         <FontAwesome name="lock" size={50} color="#cbd5e0" style={{ marginBottom: 20 }} />
@@ -111,7 +111,7 @@ export default function MyBookingsScreen() {
                 <Text style={styles.statusBadge}>{item.status.toUpperCase()}</Text>
                 <Text style={styles.date}>{new Date(item.createdAt).toLocaleDateString()}</Text>
               </View>
-              <Text style={styles.tripTitle}>{item.travelerName}'s Trip</Text>
+              <Text style={styles.tripTitle}>{item.travelerName}&apos;s Trip</Text>
               <Text style={styles.details}>{t('bookings.package', 'Package')}: {item.packageName}</Text>
               <Text style={styles.details}>{t('bookings.totalPaid', 'Total Paid')}: ₹{item.totalPrice}</Text>
               

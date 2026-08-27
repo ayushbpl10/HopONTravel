@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "792083213033",
+    "project_id": "hopontravel-ddd9b",
+    "storage_bucket": "hopontravel-ddd9b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:792083213033:android:2fb625a6f9f77d9d015e78",
+        "android_client_info": {
+          "package_name": "com.hopontravel.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "792083213033-3p41dpv6a26q9f12gg2kqaa276bivsk4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hopontravel.app",
+            "certificate_hash": "4f2448d71667fe39657b0edb1592e876a3e58274"
+          }
+        },
+        {
+          "client_id": "792083213033-f6cpm15ubdlmalnbdutjbepkmdir7i0m.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA-zfVfL53cYttd_JzFRiq01gXQjqS96B0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "792083213033-f6cpm15ubdlmalnbdutjbepkmdir7i0m.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
