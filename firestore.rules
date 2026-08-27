@@ -61,8 +61,10 @@ service cloud.firestore {
 
     // ─── VENDORS ────────────────────────────────────────────────────
     match /vendors/{vendorId} {
-      // Vendors can only read/write their own profile
-      allow read, write: if isOwner(vendorId);
+      // Anyone can read vendor profiles (needed to get pushToken for notifications)
+      allow read: if true;
+      // Vendors can only write their own profile
+      allow write: if isOwner(vendorId);
     }
 
     // ─── BOOKINGS ───────────────────────────────────────────────────
