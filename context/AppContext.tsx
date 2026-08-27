@@ -477,15 +477,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (tripDocSnap.exists()) {
       const trip = tripDocSnap.data() as Trip;
-      // Try to find the vendorId based on WhatsApp number
-      const vendorQ = query(collection(db, 'vendors'), where('whatsappNumber', '==', trip.vendorWhatsApp));
-      const vendorSnap = await getDocs(vendorQ);
+      // Prefer the vendorId directly attached to the trip, fallback to whatsapp query for older trips
+      finalBooking.vendorId = trip.vendorId || null;
       let vendorToken = '';
-      
-      if (!vendorSnap.empty) {
-        const vData = vendorSnap.docs[0].data();
-        finalBooking.vendorId = vendorSnap.docs[0].id;
-        vendorToken = vData.pushToken;
+
+      if (!finalBooking.vendorId) {
+        const vendorQ = query(collection(db, 'vendors'), where('whatsappNumber', '==', trip.vendorWhatsApp));
+        const vendorSnap = await getDocs(vendorQ);
+        if (!vendorSnap.empty) {
+          finalBooking.vendorId = vendorSnap.docs[0].id;
+          vendorToken = vendorSnap.docs[0].data().pushToken;
+        }
+      } else {
+        // We have the vendorId, let's just get the token directly if we need to send push notifications
+        const vendorRef = doc(db, 'vendors', finalBooking.vendorId);
+        const vendorSnap = await getDoc(vendorRef);
+        if (vendorSnap.exists()) {
+          vendorToken = vendorSnap.data().pushToken;
+        }
       }
       
       // Save booking to a separate 'bookings' collection
