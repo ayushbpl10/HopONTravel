@@ -1,8 +1,6 @@
-import React from 'react';
-import { render, fireEvent, waitFor, screen } from '@testing-library/react-native';
-import BookingStatusScreen from '../app/booking-status';
-import { db } from '../config/firebase';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { getDocs } from 'firebase/firestore';
+import BookingStatusScreen from '../app/booking-status';
 
 // Mock Firebase
 jest.mock('../config/firebase', () => ({
@@ -21,6 +19,24 @@ jest.mock('expo-router', () => ({
   Stack: {
     Screen: () => null,
   },
+}));
+
+// Mock react-i18next
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, defaultValue: string) => defaultValue || key,
+  }),
+}));
+
+// Mock AppContext
+jest.mock('../context/AppContext', () => ({
+  useAppContext: () => ({
+    userProfile: null,
+    loginWithGoogle: jest.fn(),
+    logout: jest.fn(),
+    loginLoading: false,
+    isOnline: true,
+  }),
 }));
 
 describe('Booking Status Flow', () => {

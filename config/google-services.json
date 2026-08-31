@@ -14,11 +14,27 @@
       },
       "oauth_client": [
         {
+          "client_id": "792083213033-0o0b8v3ejbgtqatj0n9jch7pfgav5hd6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hopontravel.app",
+            "certificate_hash": "cce85d55bcd2e35f3f4d0ab3d86485deadc8e6c4"
+          }
+        },
+        {
           "client_id": "792083213033-3p41dpv6a26q9f12gg2kqaa276bivsk4.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.hopontravel.app",
             "certificate_hash": "4f2448d71667fe39657b0edb1592e876a3e58274"
+          }
+        },
+        {
+          "client_id": "792083213033-kjl1itpr77e4oh7mj333qp6uels5dmhi.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hopontravel.app",
+            "certificate_hash": "70e6c4120d5076d24c0d775acd4fb0c4f9854406"
           }
         },
         {

@@ -1,31 +1,31 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import { Trip, Rating, Booking, trips as initialTrips } from '../data/trips';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db, auth } from '../config/firebase';
-import { signInAnonymously, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import { Platform, Alert } from 'react-native';
-import { Logger } from '../utils/logger';
-import { 
-  collection, 
-  onSnapshot, 
-  doc, 
-  setDoc,
-  getDoc,
-  updateDoc, 
-  query, 
-  where,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  arrayUnion,
-  limit,
-  startAfter,
-  DocumentData,
-  QueryDocumentSnapshot
+import { GoogleAuthProvider, signInAnonymously, signInWithCredential } from 'firebase/auth';
+import {
+    addDoc,
+    arrayUnion,
+    collection,
+    deleteDoc,
+    doc,
+    DocumentData,
+    getDoc,
+    getDocs,
+    limit,
+    onSnapshot,
+    query,
+    QueryDocumentSnapshot,
+    setDoc,
+    startAfter,
+    updateDoc,
+    where
 } from 'firebase/firestore';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { Alert, Platform } from 'react-native';
+import { auth, db } from '../config/firebase';
+import { Booking, trips as initialTrips, Rating, Trip } from '../data/trips';
+import { Logger } from '../utils/logger';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -68,6 +68,14 @@ if (Platform.OS !== 'web') {
   });
 }
 
+// Vendor payment settings
+export interface VendorPaymentSettings {
+  enabled: boolean;
+  gateway: 'razorpay' | 'cashfree' | 'manual';
+  razorpayKeyId?: string; // Vendor's own Razorpay Key ID
+  cashfreeAppId?: string; // For future Cashfree support
+}
+
 interface UserProfile {
   id: string; 
   email: string;
@@ -76,12 +84,14 @@ interface UserProfile {
   whatsappNumber: string;
   pushToken?: string;
   role?: 'vendor' | 'traveller';
+  paymentSettings?: VendorPaymentSettings; // Vendor's payment gateway settings
 }
 
 interface AppContextType {
   trips: Trip[];
   vendorBookings: Booking[];
   loading: boolean;
+  loginLoading: boolean;
   userProfile: UserProfile | null;
   loginWithGoogle: (role: 'vendor' | 'traveller') => Promise<void>;
   mockVendorLogin: () => Promise<void>;
@@ -96,6 +106,7 @@ interface AppContextType {
   fetchMoreTrips: () => Promise<void>;
   hasMoreTrips: boolean;
   refreshTrips: () => Promise<void>;
+  isOnline: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -104,10 +115,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [trips, setTrips] = useState<Trip[]>([]);
   const [vendorBookings, setVendorBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
 
   const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMoreTrips, setHasMoreTrips] = useState(true);
+  
+  // Store unsubscribe function to prevent memory leaks
+  const bookingsUnsubscribeRef = React.useRef<(() => void) | null>(null);
+
+  // Network status monitoring
+  useEffect(() => {
+    const checkNetwork = async () => {
+      try {
+        const response = await fetch('https://www.google.com/generate_204', { method: 'HEAD', mode: 'no-cors' });
+        setIsOnline(true);
+      } catch {
+        setIsOnline(false);
+      }
+    };
+    
+    checkNetwork();
+    const interval = setInterval(checkNetwork, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   // 1. Initial Load of Trips (Paginated) - only 'published' trips
   const loadInitialTrips = useCallback(async () => {
@@ -174,8 +206,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ─── VENDOR BOOKINGS (real-time listener) ─────────────────────
   const loadVendorBookings = (vendorId: string) => {
+    // Clean up any existing listener to prevent memory leaks
+    if (bookingsUnsubscribeRef.current) {
+      bookingsUnsubscribeRef.current();
+      bookingsUnsubscribeRef.current = null;
+    }
+    
     const q = query(collection(db, 'bookings'), where('vendorId', '==', vendorId));
-    onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const bookingsData: Booking[] = [];
       snapshot.forEach((docSnap) => {
         bookingsData.push({ id: docSnap.id, ...docSnap.data() } as Booking);
@@ -186,6 +224,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, (error) => {
       console.error('Error loading vendor bookings:', error);
     });
+    
+    // Store unsubscribe function for cleanup
+    bookingsUnsubscribeRef.current = unsubscribe;
   };
 
   const fetchMoreTrips = async () => {
@@ -266,6 +307,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const loginWithGoogle = async (role: 'vendor' | 'traveller') => {
+    setLoginLoading(true);
     try {
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();
@@ -307,8 +349,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Authenticate with Firebase Auth using the Google credential
       const credential = GoogleAuthProvider.credential(idToken);
-      await signInWithCredential(auth, credential);
-      const uid = auth.currentUser!.uid;
+      const userCredential = await signInWithCredential(auth, credential);
+      const uid = userCredential.user.uid;
 
       // Use auth UID as the vendor document ID (matches Firestore isOwner rule)
       const vendorDocRef = doc(db, 'vendors', uid);
@@ -369,6 +411,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'Login Failed', 
         `Could not connect to Google.\nError: ${error.message || 'Unknown'}`
       );
+    } finally {
+      setLoginLoading(false);
     }
   };
 
@@ -415,6 +459,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = async () => {
+    // Clean up bookings listener to prevent memory leaks
+    if (bookingsUnsubscribeRef.current) {
+      bookingsUnsubscribeRef.current();
+      bookingsUnsubscribeRef.current = null;
+    }
+    setVendorBookings([]);
+    
     try {
       await GoogleSignin.signOut();
     } catch (error) {
@@ -456,7 +507,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addTrip = async (trip: Omit<Trip, 'id'>) => {
-    await addDoc(collection(db, 'trips'), trip);
+    // Include vendor's payment settings in the trip
+    const tripWithPaymentConfig = {
+      ...trip,
+      vendorPaymentConfig: userProfile?.paymentSettings ? {
+        enabled: userProfile.paymentSettings.enabled,
+        gateway: userProfile.paymentSettings.gateway,
+        razorpayKeyId: userProfile.paymentSettings.razorpayKeyId,
+      } : undefined,
+    };
+    await addDoc(collection(db, 'trips'), tripWithPaymentConfig);
   };
 
   const deleteTrip = async (tripId: string) => {
@@ -538,7 +598,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateBookingStatus = async (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled' | 'failed') => {
     const bookingRef = doc(db, 'bookings', bookingId);
+    
+    // Get booking details for notification
+    const bookingSnap = await getDoc(bookingRef);
+    const bookingData = bookingSnap.data();
+    
     await updateDoc(bookingRef, { status });
+    
+    // Send push notification to traveller when booking is confirmed
+    if (status === 'confirmed' && bookingData?.travelerEmail) {
+      try {
+        // Find traveller by email to get their push token
+        const travellerQuery = query(collection(db, 'vendors'), where('email', '==', bookingData.travelerEmail));
+        const travellerSnap = await getDocs(travellerQuery);
+        
+        if (!travellerSnap.empty) {
+          const travellerToken = travellerSnap.docs[0].data().pushToken;
+          if (travellerToken) {
+            await fetch('https://exp.host/--/api/v2/push/send', {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json',
+                'Accept-encoding': 'gzip, deflate',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                to: travellerToken,
+                sound: 'default',
+                title: 'Booking Confirmed! ✅',
+                body: `Your booking ${bookingData.bookingId || bookingId} has been confirmed. Get ready for your adventure!`,
+              }),
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to send confirmation notification:', e);
+      }
+    }
+    
     if (userProfile && userProfile.role === 'vendor') {
       loadVendorBookings(userProfile.id);
     }
@@ -550,7 +647,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   return (
-    <AppContext.Provider value={{ trips, vendorBookings, loading, userProfile, loginWithGoogle, mockVendorLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, submitRating, fetchMoreTrips, hasMoreTrips, refreshTrips }}>
+    <AppContext.Provider value={{ trips, vendorBookings, loading, loginLoading, userProfile, loginWithGoogle, mockVendorLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, submitRating, fetchMoreTrips, hasMoreTrips, refreshTrips, isOnline }}>
       {children}
     </AppContext.Provider>
   );

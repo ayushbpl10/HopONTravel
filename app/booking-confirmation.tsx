@@ -1,14 +1,16 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Share, Linking } from 'react-native';
-import { useLocalSearchParams, router , Stack } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Linking, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function BookingConfirmationScreen() {
   const params = useLocalSearchParams();
-  const { tripTitle, tripDate, seats, totalPrice, bookingId, packageName, paymentStatus, vendorName, vendorWhatsApp, vendorUPI } = params;
+  const { tripTitle, tripDate, seats, totalPrice, bookingId, packageName, paymentStatus, paymentId, vendorName, vendorWhatsApp, vendorUPI } = params;
   const { t } = useTranslation();
+  
+  const isPaymentConfirmed = paymentStatus === 'confirmed';
 
   const handleWhatsAppBooking = async () => {
     const message = `Hi ${vendorName}, I just booked "${tripTitle}" via Ab Toh Ghoom Le!\nBooking ID: ${bookingId}\nSeats: ${seats}\nTotal: ₹${totalPrice}\n\nPlease confirm my booking and share payment details.`;
@@ -124,6 +126,9 @@ export default function BookingConfirmationScreen() {
           <View style={styles.bookingIdRow}>
             <Text style={styles.bookingIdLabel}>{t('booking.id', 'Booking ID')}</Text>
             <Text style={styles.bookingId}>{bookingId}</Text>
+            {paymentId && (
+              <Text style={styles.paymentIdText}>Payment ID: {paymentId}</Text>
+            )}
           </View>
         </View>
 
@@ -231,6 +236,7 @@ const styles = StyleSheet.create({
   bookingIdRow: { alignItems: 'center', paddingBottom: 20 },
   bookingIdLabel: { fontSize: 11, color: '#a0aec0', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 },
   bookingId: { fontSize: 16, fontWeight: '800', color: '#4a5568', letterSpacing: 2 },
+  paymentIdText: { fontSize: 10, color: '#a0aec0', marginTop: 6 },
 
   infoBox: {
     flexDirection: 'row', alignItems: 'center', gap: 10,

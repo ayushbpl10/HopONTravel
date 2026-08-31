@@ -1,12 +1,12 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { FlatList, StyleSheet, Text, View, ImageBackground, TouchableOpacity, TextInput, ScrollView, RefreshControl, ActivityIndicator, Animated } from 'react-native';
-import { Link, router } from 'expo-router';
-import { useAppContext } from '../context/AppContext';
 import { FontAwesome } from '@expo/vector-icons';
-import { Skeleton } from '../components/Skeleton';
-import { useTranslation } from 'react-i18next';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Link } from 'expo-router';
+import { useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ActivityIndicator, Animated, FlatList, ImageBackground, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Skeleton } from '../components/Skeleton';
+import { useAppContext } from '../context/AppContext';
 
 const PRICE_FILTERS = [
   { labelKey: 'explore.filterAll', defaultLabel: 'All', max: Infinity },
@@ -19,6 +19,13 @@ const AnimatedCard = ({ trip, t }: { trip: any, t: any }) => {
   const scale = useRef(new Animated.Value(1)).current;
   const price = trip.packages && trip.packages.length > 0 ? trip.packages[0].price : null;
   const available = trip.batches ? trip.batches.reduce((acc: number, b: any) => acc + (b.totalSeats - b.bookedSeats), 0) : 0;
+  
+  // Calculate average rating
+  const avgRating = useMemo(() => {
+    if (!trip.ratings || trip.ratings.length === 0) return null;
+    const total = trip.ratings.reduce((sum: number, r: any) => sum + r.stars, 0);
+    return (total / trip.ratings.length).toFixed(1);
+  }, [trip.ratings]);
 
   return (
     <Link href={`/trip/${trip.id}`} asChild>
@@ -29,7 +36,7 @@ const AnimatedCard = ({ trip, t }: { trip: any, t: any }) => {
       >
         <Animated.View style={[styles.cardContainer, { transform: [{ scale }] }]}>
           <ImageBackground
-            source={{ uri: trip.images[0] || 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&q=80' }}
+            source={{ uri: (trip.images && trip.images.length > 0 ? trip.images[0] : null) || 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&q=80' }}
             style={styles.cardImage}
             imageStyle={{ borderRadius: 20 }}
           >
@@ -61,6 +68,12 @@ const AnimatedCard = ({ trip, t }: { trip: any, t: any }) => {
                 <BlurView intensity={40} tint="light" style={styles.glassPillSecondary}>
                   <Text style={styles.pillText}>{available} {t('explore.left', 'left')}</Text>
                 </BlurView>
+                {avgRating && (
+                  <BlurView intensity={60} tint="dark" style={styles.ratingBadge}>
+                    <FontAwesome name="star" size={12} color="#fbbf24" />
+                    <Text style={styles.ratingText}>{avgRating}</Text>
+                  </BlurView>
+                )}
               </View>
             </LinearGradient>
           </ImageBackground>
@@ -289,6 +302,12 @@ const styles = StyleSheet.create({
   },
   priceBadgeText: { color: '#fff', fontWeight: '900', fontSize: 16 },
   pillText: { color: '#1a202c', fontWeight: '800', fontSize: 12 },
+  ratingBadge: {
+    overflow: 'hidden', flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12,
+    borderWidth: 1, borderColor: 'rgba(251, 191, 36, 0.5)'
+  },
+  ratingText: { color: '#fbbf24', fontWeight: '800', fontSize: 12 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
   emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#4a5568', marginTop: 20 },
   emptySubtitle: { fontSize: 15, color: '#8a94a6', textAlign: 'center', marginTop: 8, paddingHorizontal: 30 },

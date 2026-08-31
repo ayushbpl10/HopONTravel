@@ -1,5 +1,8 @@
-const IMGBB_API_KEY = 'c801a65662b845829fe6097c3b1e96f0';
-const FREEIMAGE_API_KEY = '6d207e02198a847aa98d0a2a901485a5';
+import Constants from 'expo-constants';
+
+// API keys loaded from app.config.js (set via EAS secrets in production)
+const IMGBB_API_KEY = Constants.expoConfig?.extra?.imgbbApiKey || '';
+const FREEIMAGE_API_KEY = Constants.expoConfig?.extra?.freeimageApiKey || '';
 
 /**
  * Helper to upload to Chevereto-based APIs (ImgBB, Freeimage.host)

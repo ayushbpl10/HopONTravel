@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
-import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../config/firebase';
-import { LiveLocation, GuestTraveller } from '../data/trips';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
+import { db } from '../config/firebase';
+import { GuestTraveller, LiveLocation } from '../data/trips';
 
 export interface LiveTripState {
   captain?: LiveLocation;
@@ -46,7 +46,7 @@ export const useLiveTracking = (tripId: string) => {
   const joinAsGuest = async (name: string) => {
     let id = guestId;
     if (!id) {
-      id = 'guest_' + Date.now().toString() + Math.random().toString(36).substr(2, 5);
+      id = 'guest_' + Date.now().toString() + Math.random().toString(36).substring(2, 7);
       await AsyncStorage.setItem(`guest_id_${tripId}`, id);
       setGuestId(id);
     }

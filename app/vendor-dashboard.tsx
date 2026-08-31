@@ -1,18 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, Modal, ActivityIndicator, Linking, Platform } from 'react-native';
+import { FontAwesome } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
-import { useAppContext } from '../context/AppContext';
-import { FontAwesome } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { Trip } from '../data/trips';
 import * as ImagePicker from 'expo-image-picker';
-import { uploadImage } from '../utils/uploadImage';
+import { router } from 'expo-router';
+import { addDoc, collection } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Linking, Modal, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import OllieLoading from '../components/OllieLoading';
-import { parseWhatsAppMessage, AIProvider, parseLocalHeuristics } from '../utils/aiParser';
-import { Logger } from '../utils/logger';
 import { db } from '../config/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { useAppContext, VendorPaymentSettings } from '../context/AppContext';
+import { Trip } from '../data/trips';
+import { PaymentGateway } from '../services/paymentService';
+import { EXPORT_CHARGE, hasExportAccess, initiateExportPayment, recordExportPayment } from '../services/platformPaymentService';
+import { AIProvider, parseLocalHeuristics, parseWhatsAppMessage } from '../utils/aiParser';
+import { ExportData, showExportDialog } from '../utils/exportData';
+import { Logger } from '../utils/logger';
+import { useScreenshotPrevention } from '../utils/screenshotPrevention';
+import { uploadImage } from '../utils/uploadImage';
 
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTranslation } from 'react-i18next';
@@ -29,7 +33,7 @@ const LIMITS = {
 };
 
 export default function VendorDashboardScreen() {
-  const { trips, vendorBookings, updateBookingStatus, userProfile, loginWithGoogle, mockVendorLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip } = useAppContext();
+  const { trips, vendorBookings, updateBookingStatus, userProfile, loginWithGoogle, mockVendorLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip, loginLoading, isOnline } = useAppContext();
   const [upiInput, setUpiInput] = useState(userProfile?.upiId || '');
   const [waInput, setWaInput] = useState(userProfile?.whatsappNumber || '');
   const [nameInput, setNameInput] = useState(userProfile?.name || '');
@@ -61,6 +65,31 @@ export default function VendorDashboardScreen() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [waText, setWaText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
+
+  // Payment Gateway states
+  const [paymentEnabled, setPaymentEnabled] = useState(userProfile?.paymentSettings?.enabled || false);
+  const [paymentGateway, setPaymentGateway] = useState<PaymentGateway>(userProfile?.paymentSettings?.gateway || 'manual');
+  const [razorpayKeyId, setRazorpayKeyId] = useState(userProfile?.paymentSettings?.razorpayKeyId || '');
+  const [showRazorpayKey, setShowRazorpayKey] = useState(false);
+  const [isPaymentSetupModalVisible, setIsPaymentSetupModalVisible] = useState(false);
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
+
+  // Export states
+  const [paidTripExports, setPaidTripExports] = useState<Set<string>>(new Set());
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportingTripId, setExportingTripId] = useState<string | null>(null);
+
+  // Enable screenshot prevention for vendor dashboard
+  useScreenshotPrevention(userProfile?.role === 'vendor');
+
+  useEffect(() => {
+    // Update payment states when userProfile changes
+    if (userProfile?.paymentSettings) {
+      setPaymentEnabled(userProfile.paymentSettings.enabled);
+      setPaymentGateway(userProfile.paymentSettings.gateway);
+      setRazorpayKeyId(userProfile.paymentSettings.razorpayKeyId || '');
+    }
+  }, [userProfile?.paymentSettings]);
 
   useEffect(() => {
     const loadAiSettings = async () => {
@@ -106,11 +135,138 @@ export default function VendorDashboardScreen() {
     router.back();
   };
 
+  const handleSavePaymentSettings = async () => {
+    // Validate Razorpay key format if enabled
+    if (paymentEnabled && paymentGateway === 'razorpay') {
+      if (!razorpayKeyId) {
+        Alert.alert('Missing Key', 'Please enter your Razorpay Key ID.');
+        return;
+      }
+      if (!razorpayKeyId.startsWith('rzp_')) {
+        Alert.alert('Invalid Key', 'Razorpay Key ID should start with "rzp_test_" or "rzp_live_".');
+        return;
+      }
+    }
+
+    setIsSavingPayment(true);
+    try {
+      const paymentSettings: VendorPaymentSettings = {
+        enabled: paymentEnabled,
+        gateway: paymentEnabled ? paymentGateway : 'manual',
+        razorpayKeyId: paymentGateway === 'razorpay' ? razorpayKeyId : undefined,
+      };
+
+      updateUserProfile({ paymentSettings });
+      setIsPaymentSetupModalVisible(false);
+      Alert.alert(
+        'Success', 
+        paymentEnabled 
+          ? 'Payment gateway enabled! Travellers can now pay online.' 
+          : 'Payment gateway disabled. Travellers will pay manually via UPI/WhatsApp.'
+      );
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save payment settings. Please try again.');
+    } finally {
+      setIsSavingPayment(false);
+    }
+  };
+
+  // Handle export with payment
+  const handleExportData = async (trip: Trip) => {
+    if (!userProfile) return;
+    
+    setExportingTripId(trip.id);
+    setIsExporting(true);
+
+    try {
+      // Check if already paid for this trip
+      const hasPaid = paidTripExports.has(trip.id) || await hasExportAccess(userProfile.id, trip.id);
+      
+      if (hasPaid) {
+        // Already paid, proceed with export
+        await proceedWithExport(trip);
+        setIsExporting(false);
+        setExportingTripId(null);
+      } else {
+        // Need to pay first - show dialog (loading state managed in callbacks)
+        setIsExporting(false); // Stop spinner while showing dialog
+        setExportingTripId(null);
+        
+        Alert.alert(
+          'Export Data',
+          `Pay ₹${EXPORT_CHARGE} to export booking data for "${trip.title}".\n\nYou'll get:\n• Excel (CSV) file\n• PDF report\n• Traveller contact details`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: `Pay ₹${EXPORT_CHARGE}`, 
+              onPress: async () => {
+                setExportingTripId(trip.id);
+                setIsExporting(true);
+                
+                try {
+                  const result = await initiateExportPayment(
+                    trip.id,
+                    trip.title,
+                    userProfile.email,
+                    userProfile.whatsappNumber,
+                    userProfile.name
+                  );
+                  
+                  if (result.success && result.paymentId) {
+                    // Record payment
+                    await recordExportPayment(userProfile.id, trip.id, result.paymentId);
+                    setPaidTripExports(prev => new Set([...prev, trip.id]));
+                    
+                    // Proceed with export
+                    await proceedWithExport(trip);
+                  } else {
+                    Alert.alert('Payment Failed', result.error || 'Could not process payment. Please try again.');
+                  }
+                } catch (err) {
+                  console.error('Payment error:', err);
+                  Alert.alert('Error', 'Payment failed. Please try again.');
+                } finally {
+                  setIsExporting(false);
+                  setExportingTripId(null);
+                }
+              }
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      Alert.alert('Error', 'Failed to export data. Please try again.');
+      setIsExporting(false);
+      setExportingTripId(null);
+    }
+  };
+
+  const proceedWithExport = async (trip: Trip) => {
+    // Get bookings for this trip
+    const tripBookings = vendorBookings.filter(b => b.tripId === trip.id);
+    
+    if (tripBookings.length === 0) {
+      Alert.alert('No Data', 'No bookings found for this trip.');
+      return;
+    }
+    
+    const exportData: ExportData = {
+      trip,
+      bookings: tripBookings,
+      exportDate: new Date(),
+    };
+    
+    showExportDialog(exportData, () => {
+      Alert.alert('Success', 'Data exported successfully!');
+    });
+  };
+
   const startEditing = (trip: Trip) => {
     setEditingTrip(trip);
     setIsAddingNew(false);
     setEditTitle(trip.title);
-    setEditPrice(trip.packages && trip.packages.length > 0 ? trip.packages[0].price.toString() : '0');
+    setEditPrice(trip.packages && trip.packages.length > 0 ? `₹${trip.packages[0].price}` : '₹');
     setEditDesc(trip.description);
     
     // Parse existing date roughly, or use current date
@@ -149,7 +305,7 @@ export default function VendorDashboardScreen() {
     setIsAddingNew(true);
     setEditingTrip({ id: 'new', ...trip } as Trip);
     setEditTitle(trip.title || '');
-    setEditPrice(trip.packages && trip.packages.length > 0 ? trip.packages[0].price.toString() : '₹');
+    setEditPrice(trip.packages && trip.packages.length > 0 ? `₹${trip.packages[0].price}` : '₹');
     setEditDesc(trip.description || '');
     
     // Attempt to parse start date
@@ -254,9 +410,12 @@ export default function VendorDashboardScreen() {
 
       const formattedDate = `${editStartDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${editEndDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
 
+      // Extract numeric price (remove currency symbol and non-digits)
+      const numericPrice = parseInt(editPrice.replace(/[^\d]/g, '')) || 0;
+      
       const tripData = {
         title: editTitle.trim(),
-        packages: [{ name: 'Base Package', price: parseInt(editPrice) || 0 }],
+        packages: [{ name: 'Base Package', price: numericPrice }],
         description: editDesc.trim(),
         batches: [{ id: Date.now().toString(), dateDuration: formattedDate, totalSeats: parseInt(editTotalSeats) || 0, bookedSeats: parseInt(editBookedSeats) || 0 }],
         images: finalImageUrls,
@@ -334,7 +493,7 @@ export default function VendorDashboardScreen() {
       startAddingFromParsed(parsedTrips[0]);
       
       if (parsedTrips.length > 1) {
-         Alert.alert('Notice', `Extracted \${parsedTrips.length} trips, but loading the first one into the editor for validation.`);
+         Alert.alert('Notice', `Extracted ${parsedTrips.length} trips, but loading the first one into the editor for validation.`);
       }
 
     } catch (error: any) {
@@ -462,9 +621,19 @@ export default function VendorDashboardScreen() {
           <Text style={styles.title}>{t('vendor.loginTitle', 'Vendor Portal')}</Text>
           <Text style={styles.subtitle}>{t('vendor.loginSubtitle', 'Sign in with Google to manage your trips and payment settings.')}</Text>
           
-          <TouchableOpacity style={styles.googleButton} onPress={() => loginWithGoogle('vendor')} onLongPress={mockVendorLogin} delayLongPress={2000}>
-            <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
-            <Text style={styles.googleButtonText}>{t('vendor.signInWithGoogle', 'Sign in with Google')}</Text>
+          <TouchableOpacity 
+            style={[styles.googleButton, loginLoading && { opacity: 0.7 }]} 
+            onPress={() => loginWithGoogle('vendor')} 
+            onLongPress={mockVendorLogin} 
+            delayLongPress={2000}
+            disabled={loginLoading}
+          >
+            {loginLoading ? (
+              <ActivityIndicator color="white" style={{ marginRight: 10 }} />
+            ) : (
+              <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
+            )}
+            <Text style={styles.googleButtonText}>{loginLoading ? 'Signing in...' : t('vendor.signInWithGoogle', 'Sign in with Google')}</Text>
           </TouchableOpacity>
 
           {Platform.OS === 'web' && (
@@ -493,9 +662,17 @@ export default function VendorDashboardScreen() {
           <Text style={styles.subtitle}>
             You are currently logged in as a traveller. To access the Vendor Portal, upgrade your account.
           </Text>
-          <TouchableOpacity style={styles.googleButton} onPress={() => loginWithGoogle('vendor')}>
-            <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
-            <Text style={styles.googleButtonText}>Upgrade to Vendor Account</Text>
+          <TouchableOpacity 
+            style={[styles.googleButton, loginLoading && { opacity: 0.7 }]} 
+            onPress={() => loginWithGoogle('vendor')}
+            disabled={loginLoading}
+          >
+            {loginLoading ? (
+              <ActivityIndicator color="white" style={{ marginRight: 10 }} />
+            ) : (
+              <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
+            )}
+            <Text style={styles.googleButtonText}>{loginLoading ? 'Upgrading...' : 'Upgrade to Vendor Account'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={{ marginTop: 20 }} onPress={logout}>
             <Text style={{ color: '#00b0ff', fontWeight: 'bold', fontSize: 15 }}>Logout</Text>
@@ -547,6 +724,14 @@ export default function VendorDashboardScreen() {
           </View>
         </View>
 
+        {/* Screenshot Prevention Notice */}
+        <View style={styles.screenshotNotice}>
+          <FontAwesome name="shield" size={14} color="#7c3aed" style={{ marginRight: 8 }} />
+          <Text style={styles.screenshotNoticeText}>
+            Screenshots are disabled. Pay ₹{EXPORT_CHARGE}/trip to export data.
+          </Text>
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Vendor Information</Text>
           
@@ -562,6 +747,52 @@ export default function VendorDashboardScreen() {
           <TouchableOpacity style={styles.saveButton} onPress={handleUpdateProfile}>
             <Text style={styles.saveButtonText}>{t('vendor.updateProfile', 'Update Profile')}</Text>
           </TouchableOpacity>
+
+          {/* Payment Gateway Settings */}
+          <View style={styles.paymentInfoBox}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <FontAwesome name="credit-card" size={16} color="#00b0ff" style={{ marginRight: 8 }} />
+                <Text style={styles.paymentInfoTitle}>Online Payments</Text>
+              </View>
+              <View style={[
+                styles.paymentStatusBadge, 
+                { backgroundColor: userProfile?.paymentSettings?.enabled ? '#dcfce7' : '#fef3c7' }
+              ]}>
+                <Text style={[
+                  styles.paymentStatusText,
+                  { color: userProfile?.paymentSettings?.enabled ? '#166534' : '#92400e' }
+                ]}>
+                  {userProfile?.paymentSettings?.enabled ? 'ENABLED' : 'MANUAL'}
+                </Text>
+              </View>
+            </View>
+            
+            <Text style={styles.paymentInfoText}>
+              {userProfile?.paymentSettings?.enabled 
+                ? 'Travellers can pay online via Razorpay. You receive payments directly to your account.'
+                : 'Travellers will pay via UPI/WhatsApp. Set up Razorpay to accept online payments.'}
+            </Text>
+
+            {userProfile?.paymentSettings?.enabled && (
+              <View style={styles.paymentMethodsRow}>
+                <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>UPI</Text></View>
+                <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>Cards</Text></View>
+                <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>NetBanking</Text></View>
+                <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>Wallets</Text></View>
+              </View>
+            )}
+
+            <TouchableOpacity 
+              style={[styles.saveButton, { marginTop: 12, backgroundColor: userProfile?.paymentSettings?.enabled ? '#64748b' : '#00b0ff' }]}
+              onPress={() => setIsPaymentSetupModalVisible(true)}
+            >
+              <FontAwesome name="cog" size={14} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.saveButtonText}>
+                {userProfile?.paymentSettings?.enabled ? 'Manage Payment Settings' : 'Set Up Razorpay'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Tab Navigation */}
@@ -606,7 +837,15 @@ export default function VendorDashboardScreen() {
           </View>
           
           {myTrips.length === 0 ? (
-            <Text style={styles.emptyText}>No trips listed yet. Click &quot;Add New&quot; to start!</Text>
+            <View style={styles.emptyStateContainer}>
+              <FontAwesome name="map-o" size={64} color="#cbd5e0" />
+              <Text style={styles.emptyStateTitle}>No trips yet</Text>
+              <Text style={styles.emptyStateSubtitle}>Create your first trip listing and start accepting bookings from travellers!</Text>
+              <TouchableOpacity style={styles.emptyStateCta} onPress={startAddingNew}>
+                <FontAwesome name="plus" size={14} color="white" style={{ marginRight: 8 }} />
+                <Text style={styles.emptyStateCtaText}>Create Your First Trip</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             myTrips.map((trip) => (
               <TouchableOpacity 
@@ -627,18 +866,46 @@ export default function VendorDashboardScreen() {
                   {trip.tripStatus === 'started' && (
                     <Text style={{ color: '#4ade80', fontWeight: 'bold', marginTop: 4 }}>LIVE TRACKING ACTIVE</Text>
                   )}
-                  {trip.tripStatus !== 'started' && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                    {trip.tripStatus !== 'started' && (
+                      <TouchableOpacity 
+                        style={{ paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#4ade80', borderRadius: 6, flexDirection: 'row', alignItems: 'center' }} 
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          router.push(`/start-trip/${trip.id}` as any);
+                        }}
+                      >
+                        <FontAwesome name="play" size={10} color="white" style={{ marginRight: 6 }} />
+                        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Start Live</Text>
+                      </TouchableOpacity>
+                    )}
+                    {/* Export Button */}
                     <TouchableOpacity 
-                      style={{ marginTop: 8, paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#4ade80', borderRadius: 6, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center' }} 
+                      style={{ 
+                        paddingVertical: 6, 
+                        paddingHorizontal: 12, 
+                        backgroundColor: paidTripExports.has(trip.id) ? '#8b5cf6' : '#f59e0b', 
+                        borderRadius: 6, 
+                        flexDirection: 'row', 
+                        alignItems: 'center',
+                        opacity: exportingTripId === trip.id ? 0.7 : 1,
+                      }} 
                       onPress={(e) => {
                         e.stopPropagation();
-                        router.push(`/start-trip/${trip.id}` as any);
+                        handleExportData(trip);
                       }}
+                      disabled={isExporting && exportingTripId === trip.id}
                     >
-                      <FontAwesome name="play" size={10} color="white" style={{ marginRight: 6 }} />
-                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Start Live Tracking</Text>
+                      {exportingTripId === trip.id ? (
+                        <ActivityIndicator size="small" color="white" style={{ marginRight: 6 }} />
+                      ) : (
+                        <FontAwesome name={paidTripExports.has(trip.id) ? "download" : "rupee"} size={10} color="white" style={{ marginRight: 6 }} />
+                      )}
+                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>
+                        {paidTripExports.has(trip.id) ? 'Export' : `₹${EXPORT_CHARGE}`}
+                      </Text>
                     </TouchableOpacity>
-                  )}
+                  </View>
                 </View>
                 <FontAwesome name={trip.tripStatus === 'started' ? "map-marker" : "edit"} size={20} color={trip.tripStatus === 'started' ? "#4ade80" : "#00b0ff"} />
               </TouchableOpacity>
@@ -1016,6 +1283,134 @@ export default function VendorDashboardScreen() {
         </View>
       </Modal>
 
+      {/* Payment Setup Modal */}
+      <Modal visible={isPaymentSetupModalVisible} animationType="slide" transparent={true}>
+        <View style={styles.aiModalOverlay}>
+          <View style={styles.aiModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Payment Gateway Setup</Text>
+              <TouchableOpacity onPress={() => setIsPaymentSetupModalVisible(false)} disabled={isSavingPayment}>
+                <FontAwesome name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Enable Toggle */}
+            <View style={styles.paymentToggleRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.paymentToggleLabel}>Enable Online Payments</Text>
+                <Text style={styles.paymentToggleDesc}>Accept payments via Razorpay directly to your account</Text>
+              </View>
+              <Switch 
+                value={paymentEnabled} 
+                onValueChange={setPaymentEnabled}
+                trackColor={{ true: '#00b0ff' }}
+              />
+            </View>
+
+            {paymentEnabled && (
+              <>
+                {/* Gateway Selection */}
+                <Text style={styles.label}>Payment Gateway</Text>
+                <View style={styles.providerToggle}>
+                  <TouchableOpacity 
+                    style={[styles.toggleBtn, paymentGateway === 'razorpay' && styles.toggleBtnActive]}
+                    onPress={() => setPaymentGateway('razorpay')}
+                  >
+                    <Text style={[styles.toggleBtnText, paymentGateway === 'razorpay' && styles.toggleBtnTextActive]}>Razorpay</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.toggleBtn, { opacity: 0.5 }]}
+                    disabled={true}
+                  >
+                    <Text style={styles.toggleBtnText}>Cashfree (Soon)</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {paymentGateway === 'razorpay' && (
+                  <>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={[styles.label, { marginBottom: 0 }]}>Razorpay Key ID</Text>
+                      <TouchableOpacity onPress={() => Linking.openURL('https://dashboard.razorpay.com/app/keys')}>
+                        <Text style={{ fontSize: 12, color: '#00b0ff', fontWeight: 'bold' }}>Get Key</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ position: 'relative', justifyContent: 'center' }}>
+                      <TextInput 
+                        style={[styles.input, { paddingRight: 40 }]} 
+                        value={razorpayKeyId} 
+                        onChangeText={setRazorpayKeyId} 
+                        placeholder="rzp_live_xxxxxxxxxxxxx"
+                        secureTextEntry={!showRazorpayKey} 
+                        autoCapitalize="none"
+                      />
+                      <TouchableOpacity 
+                        style={{ position: 'absolute', right: 10, top: 12 }} 
+                        onPress={() => setShowRazorpayKey(!showRazorpayKey)}
+                      >
+                        <FontAwesome name={showRazorpayKey ? "eye-slash" : "eye"} size={20} color="#a0aec0" />
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Setup Instructions */}
+                    <View style={styles.paymentInstructionsBox}>
+                      <Text style={styles.paymentInstructionsTitle}>
+                        <FontAwesome name="info-circle" size={14} color="#0369a1" /> How to get your Razorpay Key:
+                      </Text>
+                      <Text style={styles.paymentInstructionsText}>
+                        1. Create a free account at razorpay.com{'\n'}
+                        2. Complete KYC verification{'\n'}
+                        3. Go to Settings → API Keys{'\n'}
+                        4. Generate and copy your Key ID (starts with rzp_){'\n'}
+                        5. Paste it above
+                      </Text>
+                    </View>
+
+                    {/* MDR Notice */}
+                    <View style={[styles.paymentInstructionsBox, { backgroundColor: '#fef3c7', borderColor: '#fcd34d' }]}>
+                      <Text style={[styles.paymentInstructionsTitle, { color: '#92400e' }]}>
+                        <FontAwesome name="rupee" size={14} color="#92400e" /> Transaction Charges (MDR)
+                      </Text>
+                      <Text style={[styles.paymentInstructionsText, { color: '#78350f' }]}>
+                        • UPI: 0% (Free!){'\n'}
+                        • Cards/NetBanking: ~2% + GST{'\n'}
+                        Factor these into your trip pricing.
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+
+            {!paymentEnabled && (
+              <View style={[styles.paymentInstructionsBox, { backgroundColor: '#f0f9ff' }]}>
+                <Text style={styles.paymentInstructionsTitle}>
+                  <FontAwesome name="hand-o-right" size={14} color="#0369a1" /> Manual Payment Mode
+                </Text>
+                <Text style={styles.paymentInstructionsText}>
+                  Travellers will contact you via WhatsApp and pay through your UPI ID manually. 
+                  You'll need to verify payments and confirm bookings yourself.
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity 
+              style={[styles.saveButton, { marginTop: 20 }, isSavingPayment && styles.disabledButton]} 
+              onPress={handleSavePaymentSettings}
+              disabled={isSavingPayment}
+            >
+              {isSavingPayment ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <ActivityIndicator color="#fff" size="small" />
+                  <Text style={[styles.saveButtonText, { marginLeft: 10 }]}>Saving...</Text>
+                </View>
+              ) : (
+                <Text style={styles.saveButtonText}>Save Payment Settings</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {renderSupportFeedback()}
     </ScrollView>
   );
@@ -1242,6 +1637,38 @@ const styles = StyleSheet.create({
     marginTop: 20,
     fontStyle: 'italic',
   },
+  emptyStateContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#4a5568',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  emptyStateSubtitle: {
+    fontSize: 14,
+    color: '#718096',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  emptyStateCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#00b0ff',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 100,
+  },
+  emptyStateCtaText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   modalContainer: {
     flex: 1,
     backgroundColor: '#fff',
@@ -1400,4 +1827,108 @@ const styles = StyleSheet.create({
   bookingData: { fontSize: 14, color: '#334155' },
   bookingActions: { flexDirection: 'row', gap: 10 },
   statusUpdateBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
+
+  // Payment Gateway Info Styles
+  paymentInfoBox: { 
+    backgroundColor: '#f0f9ff', 
+    borderRadius: 12, 
+    padding: 16, 
+    marginTop: 20,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+  },
+  paymentInfoTitle: { 
+    fontSize: 14, 
+    fontWeight: '700', 
+    color: '#0369a1',
+  },
+  paymentInfoText: { 
+    fontSize: 12, 
+    color: '#64748b', 
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  paymentMethodsRow: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  paymentMethodTag: { 
+    backgroundColor: '#e0f2fe', 
+    paddingHorizontal: 10, 
+    paddingVertical: 4, 
+    borderRadius: 100,
+  },
+  paymentMethodTagText: { 
+    fontSize: 10, 
+    color: '#0284c7', 
+    fontWeight: '600',
+  },
+  paymentStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 100,
+  },
+  paymentStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  paymentToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  paymentToggleLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  paymentToggleDesc: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  paymentInstructionsBox: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 10,
+    padding: 14,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+  },
+  paymentInstructionsTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0369a1',
+    marginBottom: 8,
+  },
+  paymentInstructionsText: {
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 20,
+  },
+  
+  // Screenshot prevention notice
+  screenshotNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3e8ff',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#c4b5fd',
+  },
+  screenshotNoticeText: {
+    fontSize: 12,
+    color: '#6b21a8',
+    fontWeight: '500',
+    flex: 1,
+  },
 });

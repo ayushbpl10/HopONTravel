@@ -92,8 +92,17 @@ service cloud.firestore {
       // Anyone can read live tracking data (travellers need this)
       allow read: if true;
 
-      // Captain (vendor who owns the trip) can write the captain field, guests can write to travellers
-      allow write: if true;
+      // Only authenticated users can write to live_trips
+      // - Trip owner (vendor) can update captain location and trip status
+      // - Any authenticated user can add/update their own traveller entry
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        // Vendor can update captain field
+        isTripOwner(tripId) ||
+        // Any authenticated user can only modify the travellers map
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['travellers'])
+      );
+      allow delete: if isAuthenticated() && isTripOwner(tripId);
     }
 
     // ─── RATINGS ────────────────────────────────────────────────────

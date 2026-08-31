@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { db } from '../config/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { Booking } from '../data/trips';
-import { Stack, router } from 'expo-router';
+import { Stack } from 'expo-router';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { db } from '../config/firebase';
 import { useAppContext } from '../context/AppContext';
+import { Booking } from '../data/trips';
 
 export default function BookingStatusScreen() {
-  const { userProfile, loginWithGoogle, logout } = useAppContext();
+  const { userProfile, loginWithGoogle, logout, loginLoading, isOnline } = useAppContext();
   const [searchId, setSearchId] = useState('');
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState<Booking | null>(null);
@@ -29,7 +29,7 @@ export default function BookingStatusScreen() {
           const snap = await getDocs(q);
           const data: Booking[] = [];
           snap.forEach(doc => data.push({ id: doc.id, ...doc.data() } as Booking));
-          data.sort((a, b) => b.createdAt - a.createdAt);
+          data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
           setUserBookings(data);
         } catch (e) {
           console.error("Error fetching user bookings", e);
@@ -196,9 +196,17 @@ export default function BookingStatusScreen() {
             <FontAwesome name="user-circle" size={30} color="#4a5568" style={{ marginBottom: 10 }} />
             <Text style={styles.title}>Track All Your Trips</Text>
             <Text style={styles.subtitle}>Log in with your email to automatically track all your past and upcoming bookings.</Text>
-            <TouchableOpacity style={styles.googleButton} onPress={() => loginWithGoogle('traveller')}>
-              <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
-              <Text style={styles.googleButtonText}>Sign in with Google</Text>
+            <TouchableOpacity 
+              style={[styles.googleButton, loginLoading && { opacity: 0.7 }]} 
+              onPress={() => loginWithGoogle('traveller')}
+              disabled={loginLoading}
+            >
+              {loginLoading ? (
+                <ActivityIndicator color="white" style={{ marginRight: 10 }} />
+              ) : (
+                <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
+              )}
+              <Text style={styles.googleButtonText}>{loginLoading ? 'Signing in...' : 'Sign in with Google'}</Text>
             </TouchableOpacity>
           </View>
         )}

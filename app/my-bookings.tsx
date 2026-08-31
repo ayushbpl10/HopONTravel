@@ -1,13 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useAppContext } from '../context/AppContext';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../config/firebase';
 import { FontAwesome } from '@expo/vector-icons';
-import { Booking } from '../data/trips';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, router } from 'expo-router';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { db } from '../config/firebase';
+import { useAppContext } from '../context/AppContext';
+import { Booking } from '../data/trips';
 
 const StarRating = ({ tripId, guestName, onSubmit }: { tripId: string, guestName: string, onSubmit: (stars: number) => void }) => {
   const [rating, setRating] = useState(0);
@@ -62,7 +62,7 @@ export default function MyBookingsScreen() {
         const data: Booking[] = [];
         snap.forEach(doc => data.push({ id: doc.id, ...doc.data() } as Booking));
         // Sort by newest first
-        data.sort((a, b) => b.createdAt - a.createdAt);
+        data.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setBookings(data);
         AsyncStorage.setItem('cached_bookings', JSON.stringify(data)).catch(() => {});
       } catch (error: any) {

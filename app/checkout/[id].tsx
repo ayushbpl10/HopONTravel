@@ -1,14 +1,28 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { useAppContext } from '../../context/AppContext';
 import { FontAwesome } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useAppContext } from '../../context/AppContext';
+import { initiatePayment, isPaymentGatewayEnabled, PaymentResult, VendorPaymentConfig } from '../../services/paymentService';
 
 export default function CheckoutScreen() {
-  const { id, batchId, packageName, seats, totalPrice, tripTitle, vendorName, vendorWhatsApp, vendorUPI } = useLocalSearchParams();
+  const { 
+    id, batchId, packageName, seats, totalPrice, tripTitle, 
+    vendorName, vendorWhatsApp, vendorUPI,
+    vendorPaymentEnabled, vendorPaymentGateway, vendorRazorpayKey
+  } = useLocalSearchParams();
   const { bookTrip } = useAppContext();
   const { t } = useTranslation();
+
+  // Build vendor payment config from URL params
+  const vendorPaymentConfig: VendorPaymentConfig = {
+    enabled: vendorPaymentEnabled === 'true',
+    gateway: (vendorPaymentGateway as any) || 'manual',
+    razorpayKeyId: vendorRazorpayKey as string || undefined,
+  };
+  
+  const hasOnlinePayment = isPaymentGatewayEnabled(vendorPaymentConfig);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -18,6 +32,7 @@ export default function CheckoutScreen() {
   const [captchaNum1] = useState(Math.floor(Math.random() * 10) + 1);
   const [captchaNum2] = useState(Math.floor(Math.random() * 10) + 1);
   const [captchaAnswer, setCaptchaAnswer] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleProceed = async () => {
     if (!name || !phone || !email || !numTravellers) {
@@ -43,11 +58,48 @@ export default function CheckoutScreen() {
       return;
     }
 
-    // Generate Order ID
-    const orderId = 'ORD' + Math.floor(10000000 + Math.random() * 90000000).toString();
+    setIsProcessing(true);
 
-    // Save booking to context/Firebase
+    // Generate Order ID
+    const orderId = 'ATGL-' + Math.floor(10000000 + Math.random() * 90000000).toString();
+    const amount = parseFloat(totalPrice as string) || 0;
+    
+    if (amount <= 0) {
+      Alert.alert('Error', 'Invalid booking amount. Please go back and try again.');
+      setIsProcessing(false);
+      return;
+    }
+
     try {
+      let bookingStatus: 'pending' | 'confirmed' = 'pending';
+      let paymentId = '';
+      let paymentGateway = 'manual';
+
+      // Only initiate online payment if vendor has it enabled
+      if (hasOnlinePayment) {
+        const paymentResult: PaymentResult = await initiatePayment({
+          amount,
+          orderId,
+          description: `Booking for ${tripTitle} - ${packageName}`,
+          customerName: name,
+          customerEmail: email,
+          customerPhone: phone.startsWith('+91') ? phone : `+91${phone.replace(/\D/g, '')}`,
+          vendorName: vendorName as string,
+          vendorPaymentConfig,
+          notes: {
+            trip_id: id as string,
+            batch_id: batchId as string,
+            seats: numTravellers,
+          },
+        });
+
+        bookingStatus = paymentResult.success ? 'confirmed' : 'pending';
+        paymentId = paymentResult.paymentId || '';
+        paymentGateway = paymentResult.gateway;
+      }
+      // If no online payment, booking stays pending for manual payment
+
+      // Save booking to context/Firebase
       await bookTrip({
         tripId: id as string,
         batchId: batchId as string,
@@ -56,22 +108,25 @@ export default function CheckoutScreen() {
         travelerPhone: phone,
         travelerEmail: email,
         seats: parseInt(numTravellers, 10),
-        totalPrice: parseFloat(totalPrice as string),
-        status: 'pending',
+        totalPrice: amount,
+        status: bookingStatus,
         createdAt: Date.now(),
-        bookingId: orderId
+        bookingId: orderId,
+        paymentId,
+        paymentGateway,
       } as any);
 
       router.replace({
         pathname: '/booking-confirmation' as any,
         params: {
           tripTitle,
-          tripDate: 'TBD', // In a real app we'd pass this or fetch it
+          tripDate: 'TBD',
           seats: numTravellers,
-          totalPrice,
+          totalPrice: totalPrice as string,
           bookingId: orderId,
           packageName,
-          paymentStatus: 'pending',
+          paymentStatus: bookingStatus,
+          paymentId,
           travelerName: name,
           travelerPhone: phone,
           vendorName,
@@ -79,8 +134,10 @@ export default function CheckoutScreen() {
           vendorUPI
         }
       });
-    } catch (e) {
-      Alert.alert('Error', 'Could not create booking request. Please try again.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not process payment. Please try again.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -160,13 +217,51 @@ export default function CheckoutScreen() {
         </View>
       </View>
 
+      {/* Payment Info */}
+      {hasOnlinePayment ? (
+        <View style={styles.paymentInfoCard}>
+          <View style={styles.paymentInfoRow}>
+            <FontAwesome name="shield" size={16} color="#22c55e" />
+            <Text style={styles.paymentInfoText}>Secure payment powered by Razorpay</Text>
+          </View>
+          <Text style={styles.paymentMethodsText}>UPI | Cards | NetBanking | Wallets</Text>
+        </View>
+      ) : (
+        <View style={[styles.paymentInfoCard, { backgroundColor: '#fef3c7', borderColor: '#fcd34d' }]}>
+          <View style={styles.paymentInfoRow}>
+            <FontAwesome name="info-circle" size={16} color="#d97706" />
+            <Text style={[styles.paymentInfoText, { color: '#92400e' }]}>Manual Payment Required</Text>
+          </View>
+          <Text style={[styles.paymentMethodsText, { color: '#b45309' }]}>
+            Pay via UPI or WhatsApp after booking confirmation
+          </Text>
+        </View>
+      )}
+
       <TouchableOpacity 
-        style={[styles.btn, (!consent || !name || !phone || !email || !captchaAnswer) ? styles.btnDisabled : null]} 
+        style={[
+          styles.btn, 
+          (!consent || !name || !phone || !email || !captchaAnswer || isProcessing) ? styles.btnDisabled : null
+        ]} 
         onPress={handleProceed}
-        disabled={!consent || !name || !phone || !email || !captchaAnswer}
+        disabled={!consent || !name || !phone || !email || !captchaAnswer || isProcessing}
       >
-        <Text style={styles.btnText}>Proceed to Payment</Text>
+        {isProcessing ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <ActivityIndicator color="#fff" style={{ marginRight: 10 }} />
+            <Text style={styles.btnText}>Processing...</Text>
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <FontAwesome name={hasOnlinePayment ? "lock" : "check"} size={16} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.btnText}>{hasOnlinePayment ? `Pay ₹${totalPrice}` : 'Confirm Booking'}</Text>
+          </View>
+        )}
       </TouchableOpacity>
+
+      <Text style={styles.termsText}>
+        By proceeding, you agree to our Terms of Service and Privacy Policy
+      </Text>
     </ScrollView>
   );
 }
@@ -189,7 +284,39 @@ const styles = StyleSheet.create({
   captchaBox: { backgroundColor: '#f1f5f9', padding: 12, borderRadius: 8, marginRight: 10 },
   captchaMath: { fontSize: 18, fontWeight: '800', color: '#334155', letterSpacing: 2 },
   captchaInput: { flex: 1, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, padding: 12, fontSize: 18, fontWeight: '700', textAlign: 'center' },
-  btn: { backgroundColor: '#00b0ff', padding: 15, borderRadius: 100, alignItems: 'center' },
+  paymentInfoCard: { 
+    backgroundColor: '#f0fdf4', 
+    borderRadius: 12, 
+    padding: 15, 
+    borderWidth: 1, 
+    borderColor: '#bbf7d0', 
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  paymentInfoRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 8,
+    marginBottom: 6,
+  },
+  paymentInfoText: { 
+    fontSize: 13, 
+    color: '#166534', 
+    fontWeight: '600',
+  },
+  paymentMethodsText: { 
+    fontSize: 11, 
+    color: '#4ade80', 
+    fontWeight: '500',
+  },
+  btn: { backgroundColor: '#00b0ff', padding: 16, borderRadius: 100, alignItems: 'center' },
   btnDisabled: { backgroundColor: '#94a3b8' },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '700' }
+  btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  termsText: { 
+    fontSize: 11, 
+    color: '#94a3b8', 
+    textAlign: 'center', 
+    marginTop: 15,
+    marginBottom: 30,
+  },
 });

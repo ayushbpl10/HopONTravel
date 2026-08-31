@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Alert, Dimensions, Modal, TextInput } from 'react-native';
-import { Image } from 'expo-image';
-import { useLocalSearchParams, router } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'expo-image';
+import * as Location from 'expo-location';
+import { router, useLocalSearchParams } from 'expo-router';
+import { getDistance } from 'geolib';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Alert, Dimensions, Linking, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import TripMap from '../../components/TripMap';
 import { useAppContext } from '../../context/AppContext';
 import { useLiveTracking } from '../../hooks/useLiveTracking';
-import * as Location from 'expo-location';
-import { getDistance } from 'geolib';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import TripMap from '../../components/TripMap';
 
 const { width } = Dimensions.get('window');
 
@@ -30,6 +30,13 @@ export default function TripDetailScreen() {
   const [selectedAddOns, setSelectedAddOns] = useState<string[]>([]);
   const [seats, setSeats] = useState<number>(1);
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+  const handleImageScroll = (event: any) => {
+    const scrollPosition = event.nativeEvent.contentOffset.x;
+    const index = Math.round(scrollPosition / width);
+    setActiveImageIndex(index);
+  };
 
   useEffect(() => {
     if (trip) {
@@ -38,13 +45,24 @@ export default function TripDetailScreen() {
     }
   }, [trip]);
 
-  // Derive total price
-  const basePrice = trip?.packages?.find(p => p.name === selectedPackageName)?.price || 0;
-  const addOnsPrice = selectedAddOns.reduce((total, addonName) => {
-    const addon = trip?.addOns?.find(a => a.name === addonName);
-    return total + (addon?.price || 0);
-  }, 0);
-  const totalPrice = (basePrice + addOnsPrice) * seats;
+  // Memoized price calculations for performance
+  const basePrice = useMemo(() => 
+    trip?.packages?.find(p => p.name === selectedPackageName)?.price || 0,
+    [trip?.packages, selectedPackageName]
+  );
+  
+  const addOnsPrice = useMemo(() => 
+    selectedAddOns.reduce((total, addonName) => {
+      const addon = trip?.addOns?.find(a => a.name === addonName);
+      return total + (addon?.price || 0);
+    }, 0),
+    [selectedAddOns, trip?.addOns]
+  );
+  
+  const totalPrice = useMemo(() => 
+    (basePrice + addOnsPrice) * seats,
+    [basePrice, addOnsPrice, seats]
+  );
 
   let etaMins = 0;
   let distanceKm = 0;
@@ -143,26 +161,70 @@ export default function TripDetailScreen() {
         tripTitle: trip.title,
         vendorName: trip.vendorName,
         vendorWhatsApp: trip.vendorWhatsApp,
-        vendorUPI: trip.vendorUPI ? trip.vendorUPI[0] : ''
+        vendorUPI: trip.vendorUPI && trip.vendorUPI.length > 0 ? trip.vendorUPI[0] : '',
+        // Pass vendor payment config for Razorpay
+        vendorPaymentEnabled: trip.vendorPaymentConfig?.enabled ? 'true' : 'false',
+        vendorPaymentGateway: trip.vendorPaymentConfig?.gateway || 'manual',
+        vendorRazorpayKey: trip.vendorPaymentConfig?.razorpayKeyId || '',
       }
     });
   };
 
-
+  const handleShareTrip = async () => {
+    try {
+      const tripDate = trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : 'TBD';
+      const message = `Check out this amazing trip! 🌍\n\n` +
+        `*${trip.title}*\n` +
+        `📅 ${tripDate}\n` +
+        `💰 Starting from ₹${basePrice}\n` +
+        `👤 Organized by ${trip.vendorName}\n\n` +
+        `Book now on Ab Toh Ghoom Le app!`;
+      
+      await Share.share({
+        message,
+        title: `Trip: ${trip.title}`,
+      });
+    } catch (error) {
+      console.error('Error sharing trip:', error);
+    }
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={styles.heroScroll}>
-        {trip.images && trip.images.length > 0 ? (
-          trip.images.map((img, index) => (
-            <Image key={index} source={{ uri: img }} style={[styles.heroImage, { width }]} />
-          ))
-        ) : (
-          <View style={[styles.heroImage, { width, backgroundColor: '#cbd5e0', justifyContent: 'center', alignItems: 'center' }]}>
-            <FontAwesome name="image" size={50} color="#a0aec0" />
+      <View>
+        <ScrollView 
+          horizontal 
+          pagingEnabled 
+          showsHorizontalScrollIndicator={false} 
+          style={styles.heroScroll}
+          onScroll={handleImageScroll}
+          scrollEventThrottle={16}
+        >
+          {trip.images && trip.images.length > 0 ? (
+            trip.images.map((img, index) => (
+              <Image key={index} source={{ uri: img }} style={[styles.heroImage, { width }]} />
+            ))
+          ) : (
+            <View style={[styles.heroImage, { width, backgroundColor: '#cbd5e0', justifyContent: 'center', alignItems: 'center' }]}>
+              <FontAwesome name="image" size={50} color="#a0aec0" />
+            </View>
+          )}
+        </ScrollView>
+        {/* Page Indicator Dots */}
+        {trip.images && trip.images.length > 1 && (
+          <View style={styles.dotsContainer}>
+            {trip.images.map((_, index) => (
+              <View
+                key={index}
+                style={[
+                  styles.dot,
+                  index === activeImageIndex && styles.dotActive,
+                ]}
+              />
+            ))}
           </View>
         )}
-      </ScrollView>
+      </View>
       
       <View style={styles.detailsContainer}>
         {trip.tripStatus === 'started' && (
@@ -334,6 +396,9 @@ export default function TripDetailScreen() {
               <Text style={styles.vendorInfoText}>{trip.vendorWhatsApp}</Text>
             </View>
           </View>
+          <TouchableOpacity style={styles.shareButton} onPress={handleShareTrip}>
+            <FontAwesome name="share-alt" size={18} color="#00b0ff" />
+          </TouchableOpacity>
         </View>
 
         {/* Booking Selection (Batch, Package, Addons) */}
@@ -503,6 +568,7 @@ const styles = StyleSheet.create({
   vendorName: { fontSize: 18, fontWeight: '700', color: '#2d3748', marginBottom: 4 },
   vendorInfoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   vendorInfoText: { fontSize: 12, color: '#718096', marginLeft: 6 },
+  shareButton: { padding: 12, backgroundColor: '#e0f7ff', borderRadius: 100 },
   buttonRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   bookButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 100, elevation: 4 },
   bookButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
@@ -552,5 +618,27 @@ const styles = StyleSheet.create({
 
   totalBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1a202c', padding: 16, borderRadius: 12, marginBottom: 24 },
   totalBoxLabel: { fontSize: 16, color: '#a0aec0', fontWeight: '600' },
-  totalBoxValue: { fontSize: 24, fontWeight: '800', color: '#fff' }
+  totalBoxValue: { fontSize: 24, fontWeight: '800', color: '#fff' },
+
+  // Image gallery dots
+  dotsContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    position: 'absolute', 
+    bottom: 45, 
+    left: 0, 
+    right: 0 
+  },
+  dot: { 
+    width: 8, 
+    height: 8, 
+    borderRadius: 4, 
+    backgroundColor: 'rgba(255, 255, 255, 0.5)', 
+    marginHorizontal: 4 
+  },
+  dotActive: { 
+    backgroundColor: '#fff', 
+    width: 24 
+  },
 });

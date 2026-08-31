@@ -69,6 +69,14 @@ export interface Booking {
   source?: 'app' | 'website'; // Track booking origin
 }
 
+// Vendor payment settings (stored in trip for checkout access)
+export interface VendorPaymentConfig {
+  enabled: boolean;
+  gateway: 'razorpay' | 'cashfree' | 'manual';
+  razorpayKeyId?: string;
+  cashfreeAppId?: string;
+}
+
 export interface Trip {
   id: string;
   vendorId?: string;
@@ -95,6 +103,9 @@ export interface Trip {
   tripStatus?: 'pending' | 'started' | 'completed';
   crewDetails?: CrewDetails;
   ratings?: Rating[];
+  
+  // Vendor's payment gateway settings
+  vendorPaymentConfig?: VendorPaymentConfig;
 }
 
 export const trips: Trip[] = [

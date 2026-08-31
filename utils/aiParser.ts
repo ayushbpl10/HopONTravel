@@ -154,10 +154,10 @@ export const parseWhatsAppMessage = async (
 const parseWithGemini = async (text: string, apiKey: string): Promise<Partial<Trip>[]> => {
   const cleanApiKey = apiKey.trim();
   const modelsToTry = [
-    'gemini-3.5-flash',
-    'gemini-flash-latest',
-    'gemini-pro-latest',
-    'gemini-2.5-flash'
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+    'gemini-2.0-flash',
+    'gemini-pro'
   ];
 
   const payload = {
@@ -252,10 +252,22 @@ const parseWithOpenAI = async (text: string, apiKey: string): Promise<Partial<Tr
   }
 
   const data = await response.json();
-  const rawJsonString = data.choices?.[0]?.message?.content;
+  let rawJsonString = data.choices?.[0]?.message?.content;
   
   if (!rawJsonString) throw new Error("Empty response from OpenAI");
   
-  const parsed = JSON.parse(rawJsonString);
-  return parsed.trips || parsed;
+  // Strip markdown code blocks if the model wrapped the response
+  if (rawJsonString.startsWith('```')) {
+    const match = rawJsonString.match(/```(?:json)?\n([\s\S]*?)\n```/);
+    if (match) {
+      rawJsonString = match[1];
+    }
+  }
+  
+  try {
+    const parsed = JSON.parse(rawJsonString.trim());
+    return parsed.trips || parsed;
+  } catch (parseError) {
+    throw new Error(`Failed to parse AI response as JSON: ${(parseError as Error).message}`);
+  }
 };

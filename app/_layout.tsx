@@ -1,22 +1,34 @@
-import React, { useState } from 'react';
-import { Stack, Link } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
 import 'react-native-reanimated';
-import { AppProvider, useAppContext } from '../context/AppContext';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { AppProvider, useAppContext } from '../context/AppContext';
 
 // Optional: Suppress default error screen if needed in development
 // import { ErrorUtils } from 'react-native';
-import '../utils/backgroundLocation'; // Register background task
 import { FontAwesome } from '@expo/vector-icons';
-import { TouchableOpacity, Alert, Modal, View, Text, StyleSheet } from 'react-native';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { changeLanguage } from '../config/i18n';
+import '../utils/backgroundLocation'; // Register background task
 
 function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: any) {
   const { userProfile } = useAppContext();
+  const [showUserModal, setShowUserModal] = useState(false);
+  const router = useRouter();
+
+  const handleUserOptionSelect = (option: 'traveller' | 'vendor') => {
+    setShowUserModal(false);
+    if (option === 'traveller') {
+      router.push('/booking-status');
+    } else {
+      router.push('/vendor-dashboard');
+    }
+  };
   
   return (
     <>
+      {/* Language Selection Modal */}
       <Modal visible={showLangModal} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowLangModal(false)}>
           <View style={styles.modalContent}>
@@ -32,6 +44,31 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
             </TouchableOpacity>
             <TouchableOpacity style={styles.langOption} onPress={() => handleLangChange('kn')}>
               <Text style={styles.langText}>ಕನ್ನಡ (Kannada)</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* User Type Selection Modal */}
+      <Modal visible={showUserModal} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowUserModal(false)}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Continue as</Text>
+            <TouchableOpacity style={styles.userOption} onPress={() => handleUserOptionSelect('traveller')}>
+              <FontAwesome name="suitcase" size={20} color="#00b0ff" style={{ marginRight: 12 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.userOptionTitle}>Traveller</Text>
+                <Text style={styles.userOptionDesc}>Track bookings & join trips</Text>
+              </View>
+              <FontAwesome name="chevron-right" size={14} color="#a0aec0" />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.userOption, { borderBottomWidth: 0 }]} onPress={() => handleUserOptionSelect('vendor')}>
+              <FontAwesome name="briefcase" size={20} color="#00b0ff" style={{ marginRight: 12 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.userOptionTitle}>Vendor</Text>
+                <Text style={styles.userOptionDesc}>Manage trips & bookings</Text>
+              </View>
+              <FontAwesome name="chevron-right" size={14} color="#a0aec0" />
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -57,18 +94,12 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
                 >
                   <FontAwesome name="language" size={24} color="#00b0ff" />
                 </TouchableOpacity>
-                <Link href={"/booking-status" as any} asChild>
-                  <TouchableOpacity style={{ marginRight: userProfile?.role === 'traveller' ? 15 : 20 }}>
-                    <FontAwesome name="search" size={22} color="#00b0ff" />
-                  </TouchableOpacity>
-                </Link>
-                {userProfile?.role !== 'traveller' && (
-                  <Link href={"/vendor-dashboard" as any} asChild>
-                    <TouchableOpacity style={{ marginRight: 15 }}>
-                      <FontAwesome name="user-circle" size={24} color="#00b0ff" />
-                    </TouchableOpacity>
-                  </Link>
-                )}
+                <TouchableOpacity 
+                  style={{ marginRight: 15 }}
+                  onPress={() => setShowUserModal(true)}
+                >
+                  <FontAwesome name="user-circle" size={24} color="#00b0ff" />
+                </TouchableOpacity>
               </View>
             )
           }} 
@@ -98,6 +129,7 @@ export default function RootLayout() {
     <ErrorBoundary>
       <AppProvider>
         <StatusBar style="auto" />
+        <OfflineIndicator />
         <RootLayoutNav showLangModal={showLangModal} setShowLangModal={setShowLangModal} handleLangChange={handleLangChange} />
       </AppProvider>
     </ErrorBoundary>
@@ -114,8 +146,8 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: 'white',
     padding: 20,
-    borderRadius: 12,
-    width: 250,
+    borderRadius: 16,
+    width: 300,
     alignItems: 'center'
   },
   modalTitle: {
@@ -135,5 +167,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#00b0ff',
     fontWeight: '500'
-  }
+  },
+  userOption: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#edf2f7',
+  },
+  userOptionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1a202c',
+    marginBottom: 2,
+  },
+  userOptionDesc: {
+    fontSize: 12,
+    color: '#718096',
+  },
 });

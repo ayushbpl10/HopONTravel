@@ -1,22 +1,22 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, FlatList, ActivityIndicator, Platform } from 'react-native';
-import { useLocalSearchParams, router, Stack } from 'expo-router';
-import { useAppContext } from '../../context/AppContext';
-import { useLiveTracking } from '../../hooks/useLiveTracking';
-import * as Location from 'expo-location';
-import { getDistance } from 'geolib';
 import { FontAwesome } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { getDistance } from 'geolib';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import VendorMap from '../../components/VendorMap';
+import { useAppContext } from '../../context/AppContext';
+import { useLiveTracking } from '../../hooks/useLiveTracking';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useTranslation } from 'react-i18next';
-import { LOCATION_TASK_NAME } from '../../utils/backgroundLocation';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { query, collection, where, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { Booking } from '../../data/trips';
+import { LOCATION_TASK_NAME } from '../../utils/backgroundLocation';
 
 export default function VendorLiveDashboard() {
   const { id } = useLocalSearchParams();
@@ -146,7 +146,7 @@ export default function VendorLiveDashboard() {
         return;
       }
 
-      const csvHeader = 'Name,Distance (km),Last Updated\\n';
+      const csvHeader = 'Name,Distance (km),Last Updated\n';
       const csvRows = travellersList.map(t => {
         let dist = 'Unknown';
         if (captainLoc && t.location) {
@@ -154,7 +154,7 @@ export default function VendorLiveDashboard() {
         }
         const time = new Date(t.location?.updatedAt || Date.now()).toLocaleTimeString();
         return `${t.name},${dist},${time}`;
-      }).join('\\n');
+      }).join('\n');
       
       const csvString = csvHeader + csvRows;
       const safeTitle = trip?.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'trip';

@@ -1,6 +1,5 @@
-import { useLiveTracking } from '../hooks/useLiveTracking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { parseWhatsAppMessage, parseLocalHeuristics } from '../utils/aiParser';
+import { parseLocalHeuristics, parseWhatsAppMessage } from '../utils/aiParser';
 
 // Mock Firebase
 jest.mock('firebase/firestore', () => {
@@ -150,12 +149,12 @@ describe('HopON Travel Core Workflows', () => {
       
       const captainLoc = null; // simulate no captain location yet
 
-      const csvHeader = 'Name,Distance (km),Last Updated\\n';
+      const csvHeader = 'Name,Distance (km),Last Updated\n';
       const csvRows = Object.entries(liveState.travellers || {}).map(([gId, t]) => {
         let dist = 'Unknown';
         const time = new Date(t.location?.updatedAt || Date.now()).toLocaleTimeString('en-US', { timeZone: 'UTC' });
         return `${t.name},${dist},${time}`;
-      }).join('\\n');
+      }).join('\n');
       
       const csvString = csvHeader + csvRows;
 

@@ -1,5 +1,15 @@
 import { uploadImage } from '../utils/uploadImage';
 
+// Mock expo-constants
+jest.mock('expo-constants', () => ({
+  expoConfig: {
+    extra: {
+      imgbbApiKey: 'test_imgbb_key',
+      freeimageApiKey: 'test_freeimage_key',
+    },
+  },
+}));
+
 // Mock the global fetch function
 global.fetch = jest.fn();
 

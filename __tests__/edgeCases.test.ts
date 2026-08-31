@@ -1,6 +1,14 @@
 import { parseWhatsAppMessage } from '../utils/aiParser';
-import { uploadImage } from '../utils/uploadImage';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Mock expo-constants for uploadImage
+jest.mock('expo-constants', () => ({
+  expoConfig: {
+    extra: {
+      imgbbApiKey: 'test_imgbb_key',
+      freeimageApiKey: 'test_freeimage_key',
+    },
+  },
+}));
 
 // Mock fetch
 global.fetch = jest.fn();
