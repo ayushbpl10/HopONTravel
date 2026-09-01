@@ -8,9 +8,10 @@ import { AppProvider, useAppContext } from '../context/AppContext';
 // Optional: Suppress default error screen if needed in development
 // import { ErrorUtils } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { changeLanguage } from '../config/i18n';
 import '../utils/backgroundLocation'; // Register background task
+import OfflineIndicator from '../components/OfflineIndicator';
 
 function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: any) {
   const { userProfile, loginWithGoogle } = useAppContext();

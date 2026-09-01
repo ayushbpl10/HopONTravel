@@ -538,7 +538,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (tripDocSnap.exists()) {
       const trip = tripDocSnap.data() as Trip;
       // Prefer the vendorId directly attached to the trip, fallback to whatsapp query for older trips
-      finalBooking.vendorId = trip.vendorId || null;
+      finalBooking.vendorId = trip.vendorId || undefined;
       let vendorToken = '';
 
       if (!finalBooking.vendorId) {

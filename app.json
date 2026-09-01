@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.hopontravel.app",
-      "versionCode": 8,
+      "versionCode": 9,
       "googleServicesFile": "./config/google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
