@@ -1,12 +1,13 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Animated, FlatList, ImageBackground, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Skeleton } from '../components/Skeleton';
 import { useAppContext } from '../context/AppContext';
+import { useWishlist } from '../hooks/useWishlist';
 
 const PRICE_FILTERS = [
   { labelKey: 'explore.filterAll', defaultLabel: 'All', max: Infinity },
@@ -15,17 +16,12 @@ const PRICE_FILTERS = [
   { labelKey: 'explore.filterAbove2000', defaultLabel: 'Above ₹2000', min: 2000, max: Infinity },
 ];
 
-const AnimatedCard = ({ trip, t }: { trip: any, t: any }) => {
+const AnimatedCard = ({ trip, t, isWishlisted, onToggleWishlist }: { trip: any, t: any, isWishlisted: boolean, onToggleWishlist: (id: string) => void }) => {
   const scale = useRef(new Animated.Value(1)).current;
   const price = trip.packages && trip.packages.length > 0 ? trip.packages[0].price : null;
   const available = trip.batches ? trip.batches.reduce((acc: number, b: any) => acc + (b.totalSeats - b.bookedSeats), 0) : 0;
   
-  // Calculate average rating
-  const avgRating = useMemo(() => {
-    if (!trip.ratings || trip.ratings.length === 0) return null;
-    const total = trip.ratings.reduce((sum: number, r: any) => sum + r.stars, 0);
-    return (total / trip.ratings.length).toFixed(1);
-  }, [trip.ratings]);
+
 
   return (
     <Link href={`/trip/${trip.id}`} asChild>
@@ -40,6 +36,12 @@ const AnimatedCard = ({ trip, t }: { trip: any, t: any }) => {
             style={styles.cardImage}
             imageStyle={{ borderRadius: 20 }}
           >
+            <TouchableOpacity 
+              style={styles.wishlistBtn}
+              onPress={(e) => { e.preventDefault(); e.stopPropagation(); onToggleWishlist(trip.id); }}
+            >
+              <FontAwesome name={isWishlisted ? "heart" : "heart-o"} size={20} color={isWishlisted ? "#ef4444" : "#fff"} />
+            </TouchableOpacity>
             <LinearGradient
               colors={['transparent', 'rgba(0,0,0,0.85)']}
               style={styles.overlay}
@@ -68,12 +70,6 @@ const AnimatedCard = ({ trip, t }: { trip: any, t: any }) => {
                 <BlurView intensity={40} tint="light" style={styles.glassPillSecondary}>
                   <Text style={styles.pillText}>{available} {t('explore.left', 'left')}</Text>
                 </BlurView>
-                {avgRating && (
-                  <BlurView intensity={60} tint="dark" style={styles.ratingBadge}>
-                    <FontAwesome name="star" size={12} color="#fbbf24" />
-                    <Text style={styles.ratingText}>{avgRating}</Text>
-                  </BlurView>
-                )}
               </View>
             </LinearGradient>
           </ImageBackground>
@@ -85,6 +81,7 @@ const AnimatedCard = ({ trip, t }: { trip: any, t: any }) => {
 
 export default function HomeScreen() {
   const { trips, loading, fetchMoreTrips, hasMoreTrips, refreshTrips } = useAppContext();
+  const { wishlistedIds, toggleWishlist } = useWishlist();
   const [refreshing, setRefreshing] = useState(false);
   const { t } = useTranslation();
 
@@ -95,6 +92,8 @@ export default function HomeScreen() {
   };
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState(0);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeDestination, setActiveDestination] = useState<string | null>(null);
 
   const filteredTrips = useMemo(() => {
     const filter = PRICE_FILTERS[activeFilter];
@@ -103,12 +102,16 @@ export default function HomeScreen() {
       // Only show published trips, exclude internal REPORT entries
       if (trip.status !== 'published') return false;
       if (trip.title?.startsWith('REPORT:')) return false;
+      
       const matchesSearch = trip.title.toLowerCase().includes(query) || trip.description.toLowerCase().includes(query);
       const price = trip.packages && trip.packages.length > 0 ? trip.packages[0].price : 0;
       const matchesPrice = price >= (filter.min ?? 0) && price <= filter.max;
-      return matchesSearch && matchesPrice;
+      const matchesCategory = activeCategory ? trip.category === activeCategory : true;
+      const matchesDestination = activeDestination ? trip.destination === activeDestination : true;
+      
+      return matchesSearch && matchesPrice && matchesCategory && matchesDestination;
     });
-  }, [trips, searchQuery, activeFilter]);
+  }, [trips, searchQuery, activeFilter, activeCategory, activeDestination]);
 
   if (loading) {
     return (
@@ -143,6 +146,13 @@ export default function HomeScreen() {
           <Text style={styles.heroSubtitle}>{t('explore.heroSubtitle', 'Find and book the best trips directly from verified local guides.')}</Text>
         </View>
 
+        <TouchableOpacity 
+          style={{ position: 'absolute', top: 50, right: 20, backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 20 }}
+          onPress={() => router.push('/wishlist' as any)}
+        >
+          <FontAwesome name="heart" size={20} color="#ef4444" />
+        </TouchableOpacity>
+
         {/* Glassmorphic Search Bar */}
         <BlurView intensity={80} tint="default" style={styles.searchBlurContainer}>
           <FontAwesome name="search" size={18} color="#4a5568" style={styles.searchIcon} />
@@ -160,6 +170,36 @@ export default function HomeScreen() {
 
       {/* Filter Chips */}
       <View style={styles.filterWrapper}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.filterRow, { marginBottom: 10 }]} contentContainerStyle={{ paddingHorizontal: 16 }}>
+          <TouchableOpacity onPress={() => setActiveCategory(null)}>
+            <View style={[styles.filterChip, !activeCategory && { backgroundColor: '#f3e8ff', borderColor: '#d8b4fe', borderWidth: 1 }]}>
+              <Text style={[styles.filterChipText, !activeCategory && { color: '#7e22ce', fontWeight: 'bold' }]}>All Trips</Text>
+            </View>
+          </TouchableOpacity>
+          {['Trekking', 'Camping', 'Beach', 'Road Trip', 'Pilgrimage', 'International'].map((cat) => (
+            <TouchableOpacity key={cat} onPress={() => setActiveCategory(cat)}>
+              <View style={[styles.filterChip, activeCategory === cat && { backgroundColor: '#f3e8ff', borderColor: '#d8b4fe', borderWidth: 1 }]}>
+                <Text style={[styles.filterChipText, activeCategory === cat && { color: '#7e22ce', fontWeight: 'bold' }]}>{cat}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.filterRow, { marginBottom: 10 }]} contentContainerStyle={{ paddingHorizontal: 16 }}>
+          <TouchableOpacity onPress={() => setActiveDestination(null)}>
+            <View style={[styles.filterChip, !activeDestination && { backgroundColor: '#e0f2fe', borderColor: '#7dd3fc', borderWidth: 1 }]}>
+              <Text style={[styles.filterChipText, !activeDestination && { color: '#0369a1', fontWeight: 'bold' }]}>Anywhere</Text>
+            </View>
+          </TouchableOpacity>
+          {['Pune', 'Mumbai', 'Bangalore'].map((dest) => (
+            <TouchableOpacity key={dest} onPress={() => setActiveDestination(dest)}>
+              <View style={[styles.filterChip, activeDestination === dest && { backgroundColor: '#e0f2fe', borderColor: '#7dd3fc', borderWidth: 1 }]}>
+                <Text style={[styles.filterChipText, activeDestination === dest && { color: '#0369a1', fontWeight: 'bold' }]}>{dest}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={{ paddingHorizontal: 16 }}>
           {PRICE_FILTERS.map((f, idx) => (
             <TouchableOpacity
@@ -201,7 +241,7 @@ export default function HomeScreen() {
             </View>
           ) : null
         }
-        renderItem={({ item }) => <AnimatedCard trip={item} t={t} />}
+        renderItem={({ item }) => <AnimatedCard trip={item} t={t} isWishlisted={wishlistedIds.includes(item.id)} onToggleWishlist={toggleWishlist} />}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <FontAwesome name="map-o" size={64} color="#cbd5e0" />
@@ -270,11 +310,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2,
     shadowRadius: 15, elevation: 8,
   },
-  cardImage: { flex: 1, justifyContent: 'flex-end' },
+  cardImage: { flex: 1, justifyContent: 'flex-end', padding: 0 },
+  wishlistBtn: {
+    position: 'absolute', top: 16, right: 16, zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.3)', padding: 10, borderRadius: 20
+  },
   overlay: {
-    padding: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20,
+    padding: 20, paddingTop: 60, borderRadius: 20,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
-    paddingTop: 80, // Ensures gradient stretches up nicely
   },
   titleContainer: { flex: 1, marginRight: 15 },
   liveBadge: {
@@ -302,12 +345,7 @@ const styles = StyleSheet.create({
   },
   priceBadgeText: { color: '#fff', fontWeight: '900', fontSize: 16 },
   pillText: { color: '#1a202c', fontWeight: '800', fontSize: 12 },
-  ratingBadge: {
-    overflow: 'hidden', flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12,
-    borderWidth: 1, borderColor: 'rgba(251, 191, 36, 0.5)'
-  },
-  ratingText: { color: '#fbbf24', fontWeight: '800', fontSize: 12 },
+
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
   emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#4a5568', marginTop: 20 },
   emptySubtitle: { fontSize: 15, color: '#8a94a6', textAlign: 'center', marginTop: 8, paddingHorizontal: 30 },

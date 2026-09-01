@@ -41,12 +41,15 @@ export default function VendorDashboardScreen() {
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [activeTab, setActiveTab] = useState<'trips' | 'bookings'>('trips');
   const [bookingSearch, setBookingSearch] = useState('');
+  const [selectedBookings, setSelectedBookings] = useState<Set<string>>(new Set());
   const { t } = useTranslation();
   
   // Edit/Add form states
   const [editTitle, setEditTitle] = useState('');
   const [editPrice, setEditPrice] = useState('₹');
   const [editDesc, setEditDesc] = useState('');
+  const [editCategory, setEditCategory] = useState('Trekking');
+  const [editDestination, setEditDestination] = useState('Pune');
   const [editStartDate, setEditStartDate] = useState(new Date());
   const [editEndDate, setEditEndDate] = useState(new Date());
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -55,6 +58,7 @@ export default function VendorDashboardScreen() {
   const [editTotalSeats, setEditTotalSeats] = useState('20');
   const [editBookedSeats, setEditBookedSeats] = useState('0');
   const [editImages, setEditImages] = useState<string[]>([]);
+  const [editStructuredItinerary, setEditStructuredItinerary] = useState<{ day: number; title: string; description: string }[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [showTimePickerForIdx, setShowTimePickerForIdx] = useState<number | null>(null);
 
@@ -73,6 +77,36 @@ export default function VendorDashboardScreen() {
   const [showRazorpayKey, setShowRazorpayKey] = useState(false);
   const [isPaymentSetupModalVisible, setIsPaymentSetupModalVisible] = useState(false);
   const [isSavingPayment, setIsSavingPayment] = useState(false);
+
+  // Discount states
+  const [newDiscountCode, setNewDiscountCode] = useState('');
+  const [newDiscountPercent, setNewDiscountPercent] = useState('10');
+  const [newDiscountMaxUses, setNewDiscountMaxUses] = useState('50');
+
+  const handleAddDiscountCode = () => {
+    if (!newDiscountCode.trim()) return;
+    const codes = userProfile?.discountCodes || [];
+    if (codes.find(c => c.code.toLowerCase() === newDiscountCode.trim().toLowerCase())) {
+      Alert.alert('Exists', 'This code already exists.');
+      return;
+    }
+    const newCode = {
+      code: newDiscountCode.trim().toUpperCase(),
+      discountPercent: parseInt(newDiscountPercent) || 10,
+      maxUses: parseInt(newDiscountMaxUses) || 50,
+      usedCount: 0
+    };
+    updateUserProfile({ discountCodes: [...codes, newCode] });
+    setNewDiscountCode('');
+    setNewDiscountPercent('10');
+    setNewDiscountMaxUses('50');
+    Alert.alert('Success', 'Discount code added.');
+  };
+
+  const handleRemoveDiscountCode = (codeToRemove: string) => {
+    const codes = userProfile?.discountCodes || [];
+    updateUserProfile({ discountCodes: codes.filter(c => c.code !== codeToRemove) });
+  };
 
   // Export states
   const [paidTripExports, setPaidTripExports] = useState<Set<string>>(new Set());
@@ -186,6 +220,27 @@ export default function VendorDashboardScreen() {
     }
   };
 
+  const handleDuplicateTrip = (trip: Trip) => {
+    if (myTrips.length >= LIMITS.MAX_TRIPS_PER_VENDOR) {
+      Alert.alert('Limit Reached', `You can only have up to ${LIMITS.MAX_TRIPS_PER_VENDOR} active trip listings.`);
+      return;
+    }
+    setIsAddingNew(true);
+    setEditingTrip({ id: 'new' } as Trip);
+    setEditTitle(trip.title);
+    setEditPrice(trip.packages && trip.packages.length > 0 ? `₹${trip.packages[0].price}` : '₹');
+    setEditDesc(trip.description);
+    setEditCategory(trip.category || 'Trekking');
+    setEditDestination(trip.destination || 'Pune');
+    setEditStartDate(new Date());
+    setEditEndDate(new Date(Date.now() + 86400000 * 2));
+    setEditPickupPoints(trip.pickupPoints || []);
+    setEditTotalSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].totalSeats.toString() : '20');
+    setEditBookedSeats('0');
+    setEditImages((trip.images || []).filter(img => img && typeof img === 'string' && img.trim() !== ''));
+    Alert.alert('Duplicated', 'Trip copied! Update the dates and publish.');
+  };
+
   // Handle export with payment
   const handleExportData = async (trip: Trip) => {
     if (!userProfile) return;
@@ -283,11 +338,14 @@ export default function VendorDashboardScreen() {
     setEditTitle(trip.title);
     setEditPrice(trip.packages && trip.packages.length > 0 ? `₹${trip.packages[0].price}` : '₹');
     setEditDesc(trip.description);
+    setEditCategory(trip.category || 'Trekking');
+    setEditDestination(trip.destination || 'Pune');
     
     // Parse existing date roughly, or use current date
     setEditStartDate(new Date());
     setEditEndDate(new Date(Date.now() + 86400000 * 2));
     setEditPickupPoints(trip.pickupPoints || []);
+    setEditStructuredItinerary(trip.structuredItinerary || []);
 
     setEditTotalSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].totalSeats.toString() : '0');
     setEditBookedSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].bookedSeats.toString() : '0');
@@ -304,9 +362,12 @@ export default function VendorDashboardScreen() {
     setEditTitle('');
     setEditPrice('₹');
     setEditDesc('');
+    setEditCategory('Trekking');
+    setEditDestination('Pune');
     setEditStartDate(new Date());
     setEditEndDate(new Date(Date.now() + 86400000 * 2));
     setEditPickupPoints([]);
+    setEditStructuredItinerary([]);
     setEditTotalSeats('20');
     setEditBookedSeats('0');
     setEditImages([]);
@@ -322,6 +383,8 @@ export default function VendorDashboardScreen() {
     setEditTitle(trip.title || '');
     setEditPrice(trip.packages && trip.packages.length > 0 ? `₹${trip.packages[0].price}` : '₹');
     setEditDesc(trip.description || '');
+    setEditCategory(trip.category || 'Trekking');
+    setEditDestination(trip.destination || 'Pune');
     
     // Attempt to parse start date
     let startDate = new Date();
@@ -333,6 +396,7 @@ export default function VendorDashboardScreen() {
     setEditEndDate(new Date(startDate.getTime() + 86400000 * 2));
     
     setEditPickupPoints(trip.pickupPoints || []);
+    setEditStructuredItinerary(trip.structuredItinerary || []);
     setEditTotalSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].totalSeats.toString() : '20');
     setEditBookedSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].bookedSeats.toString() : '0');
     setEditImages([]);
@@ -371,6 +435,46 @@ export default function VendorDashboardScreen() {
     const newImages = [...editImages];
     newImages.splice(index, 1);
     setEditImages(newImages);
+  };
+
+  const toggleBookingSelection = (bookingId: string) => {
+    const newSelected = new Set(selectedBookings);
+    if (newSelected.has(bookingId)) {
+      newSelected.delete(bookingId);
+    } else {
+      newSelected.add(bookingId);
+    }
+    setSelectedBookings(newSelected);
+  };
+
+  const handleBulkUpdate = async (status: 'confirmed' | 'cancelled') => {
+    if (selectedBookings.size === 0) return;
+    
+    Alert.alert(
+      `Confirm ${status === 'confirmed' ? 'Success' : 'Cancellation'}`,
+      `Are you sure you want to mark ${selectedBookings.size} bookings as ${status}?`,
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes',
+          onPress: async () => {
+            setIsUploading(true);
+            try {
+              for (const bookingId of selectedBookings) {
+                await updateBookingStatus(bookingId, status);
+              }
+              setSelectedBookings(new Set());
+              Alert.alert('Success', `Bulk update complete.`);
+            } catch (e) {
+              console.error(e);
+              Alert.alert('Error', 'Some updates failed.');
+            } finally {
+              setIsUploading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleDeleteTrip = () => {
@@ -432,6 +536,8 @@ export default function VendorDashboardScreen() {
         title: editTitle.trim(),
         packages: [{ name: 'Base Package', price: numericPrice }],
         description: editDesc.trim(),
+        category: editCategory,
+        destination: editDestination,
         batches: [{ id: Date.now().toString(), dateDuration: formattedDate, totalSeats: parseInt(editTotalSeats) || 0, bookedSeats: parseInt(editBookedSeats) || 0 }],
         images: finalImageUrls,
         vendorName: userProfile?.name || '',
@@ -441,6 +547,7 @@ export default function VendorDashboardScreen() {
         addOns: [],
         pickupPoints: editPickupPoints.filter(p => p.location.trim() && p.time.trim()),
         itinerary: '',
+        structuredItinerary: editStructuredItinerary.filter(d => d.title.trim()),
         inclusions: [],
         exclusions: [],
         thingsToCarry: [],
@@ -701,6 +808,16 @@ export default function VendorDashboardScreen() {
   // At this point userProfile is definitely a vendor
   const myTrips = trips.filter(t => t.vendorId === userProfile.id);
 
+  // Calculate Revenue Analytics
+  const confirmedBookings = vendorBookings.filter(b => b.status === 'confirmed');
+  const totalRevenue = confirmedBookings.reduce((sum, b) => sum + (b.totalPrice || 0), 0);
+  const totalSeatsSold = confirmedBookings.reduce((sum, b) => sum + (b.seats || 1), 0);
+  const totalCapacity = myTrips.reduce((sum, t) => {
+    return sum + (t.batches ? t.batches.reduce((bSum, b) => bSum + b.totalSeats, 0) : 0);
+  }, 0);
+  const occupancyRate = totalCapacity > 0 ? Math.round((totalSeatsSold / totalCapacity) * 100) : 0;
+  const avgTicketPrice = confirmedBookings.length > 0 ? Math.round(totalRevenue / confirmedBookings.length) : 0;
+
   return (
     <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer}>
       <View style={styles.dashboardCard}>
@@ -708,26 +825,7 @@ export default function VendorDashboardScreen() {
           <View>
             <Text style={styles.welcomeText}>{t('vendor.welcome', 'Welcome')}, {userProfile.name}</Text>
             <Text style={styles.emailText}>{userProfile.email}</Text>
-            {(() => {
-              let totalRating = 0;
-              let totalReviews = 0;
-              myTrips.forEach(t => {
-                t.ratings?.forEach(r => {
-                  totalRating += r.stars;
-                  totalReviews += 1;
-                });
-              });
-              if (totalReviews === 0) return null;
-              const avgRating = (totalRating / totalReviews).toFixed(1);
-              return (
-                <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 6}}>
-                  <FontAwesome name="star" color="#f59e0b" size={14} />
-                  <Text style={{marginLeft: 4, fontWeight: 'bold', color: '#4a5568', fontSize: 13}}>
-                    {avgRating} ({totalReviews} reviews)
-                  </Text>
-                </View>
-              );
-            })()}
+
           </View>
           <View style={{ flexDirection: 'row', gap: 15, alignItems: 'center' }}>
             <TouchableOpacity onPress={() => router.push('/my-bookings' as any)}>
@@ -808,6 +906,40 @@ export default function VendorDashboardScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Discount Codes Section */}
+          <View style={[styles.paymentInfoBox, { marginTop: 15, backgroundColor: '#f5f3ff', borderColor: '#ddd6fe' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+              <FontAwesome name="tag" size={16} color="#8b5cf6" style={{ marginRight: 8 }} />
+              <Text style={[styles.paymentInfoTitle, { color: '#6d28d9' }]}>Promo Codes</Text>
+            </View>
+            
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+              <TextInput style={[styles.input, { flex: 2, marginBottom: 0 }]} value={newDiscountCode} onChangeText={setNewDiscountCode} placeholder="CODE (e.g. SUMMER10)" autoCapitalize="characters" />
+              <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} value={newDiscountPercent} onChangeText={setNewDiscountPercent} placeholder="%" keyboardType="numeric" />
+              <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} value={newDiscountMaxUses} onChangeText={setNewDiscountMaxUses} placeholder="Uses" keyboardType="numeric" />
+            </View>
+            
+            <TouchableOpacity style={[styles.saveButton, { backgroundColor: '#8b5cf6', marginTop: 0 }]} onPress={handleAddDiscountCode}>
+              <Text style={styles.saveButtonText}>Add Promo Code</Text>
+            </TouchableOpacity>
+
+            {userProfile?.discountCodes && userProfile.discountCodes.length > 0 && (
+              <View style={{ marginTop: 15, borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 10 }}>
+                {userProfile.discountCodes.map((code, idx) => (
+                  <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
+                    <View>
+                      <Text style={{ fontWeight: 'bold', color: '#4b5563' }}>{code.code} <Text style={{ color: '#059669' }}>({code.discountPercent}% OFF)</Text></Text>
+                      <Text style={{ fontSize: 12, color: '#6b7280' }}>{code.usedCount} / {code.maxUses} used</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => handleRemoveDiscountCode(code.code)} style={{ padding: 5 }}>
+                      <FontAwesome name="trash" size={16} color="#ef4444" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Tab Navigation */}
@@ -825,6 +957,27 @@ export default function VendorDashboardScreen() {
             <Text style={[styles.tabText, activeTab === 'bookings' && styles.tabTextActive]}>Manage Bookings</Text>
           </TouchableOpacity>
         </View>
+
+        {activeTab === 'bookings' && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginHorizontal: 20, marginBottom: 20 }}>
+            <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#f0f9ff', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#bae6fd' }}>
+              <Text style={{ color: '#0369a1', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Total Revenue</Text>
+              <Text style={{ color: '#0c4a6e', fontSize: 20, fontWeight: 'bold' }}>₹{totalRevenue.toLocaleString('en-IN')}</Text>
+            </View>
+            <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#fdf4ff', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#fbcfe8' }}>
+              <Text style={{ color: '#86198f', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Bookings</Text>
+              <Text style={{ color: '#4a044e', fontSize: 20, fontWeight: 'bold' }}>{confirmedBookings.length}</Text>
+            </View>
+            <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#f0fdf4', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#bbf7d0' }}>
+              <Text style={{ color: '#166534', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Occupancy Rate</Text>
+              <Text style={{ color: '#14532d', fontSize: 20, fontWeight: 'bold' }}>{occupancyRate}%</Text>
+            </View>
+            <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#fffbeb', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#fde68a' }}>
+              <Text style={{ color: '#b45309', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Avg Ticket</Text>
+              <Text style={{ color: '#78350f', fontSize: 20, fontWeight: 'bold' }}>₹{avgTicketPrice.toLocaleString('en-IN')}</Text>
+            </View>
+          </View>
+        )}
 
         {activeTab === 'trips' ? (
           <View style={styles.section}>
@@ -912,6 +1065,24 @@ export default function VendorDashboardScreen() {
                       <FontAwesome name="share-alt" size={10} color="white" style={{ marginRight: 6 }} />
                       <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Share</Text>
                     </TouchableOpacity>
+                    {/* Duplicate Button */}
+                    <TouchableOpacity 
+                      style={{ 
+                        paddingVertical: 6, 
+                        paddingHorizontal: 12, 
+                        backgroundColor: '#8b5cf6', 
+                        borderRadius: 6, 
+                        flexDirection: 'row', 
+                        alignItems: 'center',
+                      }} 
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleDuplicateTrip(trip);
+                      }}
+                    >
+                      <FontAwesome name="copy" size={10} color="white" style={{ marginRight: 6 }} />
+                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Duplicate</Text>
+                    </TouchableOpacity>
                     {/* Export Button */}
                     <TouchableOpacity 
                       style={{ 
@@ -956,6 +1127,26 @@ export default function VendorDashboardScreen() {
                 onChangeText={setBookingSearch}
               />
             </View>
+
+            {selectedBookings.size > 0 && (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f1f5f9', padding: 10, borderRadius: 8, marginBottom: 12 }}>
+                <Text style={{ fontWeight: 'bold', color: '#334155' }}>{selectedBookings.size} selected</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity 
+                    style={[styles.statusUpdateBtn, {backgroundColor: '#22c55e', paddingVertical: 6, paddingHorizontal: 12}]} 
+                    onPress={() => handleBulkUpdate('confirmed')}
+                  >
+                    <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Confirm All</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.statusUpdateBtn, {backgroundColor: '#ef4444', paddingVertical: 6, paddingHorizontal: 12}]} 
+                    onPress={() => handleBulkUpdate('cancelled')}
+                  >
+                    <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Cancel All</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
             
             {vendorBookings.length === 0 ? (
               <Text style={styles.emptyText}>No bookings received yet.</Text>
@@ -963,6 +1154,9 @@ export default function VendorDashboardScreen() {
               vendorBookings.filter(b => b.travelerName.toLowerCase().includes(bookingSearch.toLowerCase()) || b.bookingId?.toLowerCase().includes(bookingSearch.toLowerCase())).map((booking) => (
                 <View key={booking.id} style={styles.bookingCard}>
                   <View style={styles.bookingHeader}>
+                    <TouchableOpacity onPress={() => toggleBookingSelection(booking.id)} style={{ marginRight: 10 }}>
+                      <FontAwesome name={selectedBookings.has(booking.id) ? "check-square" : "square-o"} size={20} color={selectedBookings.has(booking.id) ? "#3b82f6" : "#cbd5e0"} />
+                    </TouchableOpacity>
                     <Text style={styles.bookingIdText}>{booking.bookingId}</Text>
                     <View style={[styles.statusBadge, booking.status === 'confirmed' ? {backgroundColor: '#dcfce7'} : booking.status === 'failed' ? {backgroundColor: '#fee2e2'} : {backgroundColor: '#fef3c7'}]}>
                       <Text style={[styles.statusText, booking.status === 'confirmed' ? {color: '#16a34a'} : booking.status === 'failed' ? {color: '#dc2626'} : {color: '#d97706'}]}>
@@ -991,6 +1185,18 @@ export default function VendorDashboardScreen() {
                   </View>
                   
                   <View style={styles.bookingActions}>
+                    {booking.status === 'confirmed' && (
+                      <TouchableOpacity 
+                        style={[styles.statusUpdateBtn, {backgroundColor: '#25d366', marginRight: 8}]} 
+                        onPress={() => {
+                          const message = `Hi ${booking.travelerName},\n\nYour booking for *${booking.packageName}* (${booking.seats} seats) is confirmed! 🎉\n\nTotal Paid: ₹${booking.totalPrice}\n\nWe will share more details soon. Thank you for booking with ${userProfile?.name}!`;
+                          Linking.openURL(`whatsapp://send?phone=${booking.travelerPhone.replace('+', '')}&text=${encodeURIComponent(message)}`);
+                        }}
+                      >
+                        <FontAwesome name="whatsapp" size={16} color="#fff" style={{marginRight: 4}} />
+                        <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Message</Text>
+                      </TouchableOpacity>
+                    )}
                     {booking.status !== 'confirmed' && (
                       <TouchableOpacity 
                         style={[styles.statusUpdateBtn, {backgroundColor: '#22c55e'}]} 
@@ -1036,6 +1242,46 @@ export default function VendorDashboardScreen() {
             placeholder="e.g. Weekend getaway to Gokarna" 
             maxLength={LIMITS.MAX_TITLE_CHARS}
           />
+
+          <View style={{ marginBottom: 12 }}>
+            <Text style={styles.label}>Category</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
+              {['Trekking', 'Camping', 'Beach', 'Road Trip', 'Pilgrimage', 'International'].map((cat) => (
+                <TouchableOpacity 
+                  key={cat} 
+                  onPress={() => setEditCategory(cat)}
+                  style={{ 
+                    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, 
+                    marginRight: 8, borderWidth: 1, 
+                    borderColor: editCategory === cat ? '#8b5cf6' : '#cbd5e0',
+                    backgroundColor: editCategory === cat ? '#f5f3ff' : '#fff'
+                  }}
+                >
+                  <Text style={{ color: editCategory === cat ? '#7c3aed' : '#475569', fontSize: 13, fontWeight: editCategory === cat ? 'bold' : 'normal' }}>{cat}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={{ marginBottom: 15 }}>
+            <Text style={styles.label}>Destination</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
+              {['Pune', 'Mumbai', 'Bangalore'].map((dest) => (
+                <TouchableOpacity 
+                  key={dest} 
+                  onPress={() => setEditDestination(dest)}
+                  style={{ 
+                    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, 
+                    marginRight: 8, borderWidth: 1, 
+                    borderColor: editDestination === dest ? '#0ea5e9' : '#cbd5e0',
+                    backgroundColor: editDestination === dest ? '#f0f9ff' : '#fff'
+                  }}
+                >
+                  <Text style={{ color: editDestination === dest ? '#0369a1' : '#475569', fontSize: 13, fontWeight: editDestination === dest ? 'bold' : 'normal' }}>{dest}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
 
           <View style={styles.row}>
             <View style={{ flex: 1, marginRight: 10 }}>
@@ -1095,6 +1341,58 @@ export default function VendorDashboardScreen() {
             placeholder={t('vendor.descPlaceholder', 'Describe the itinerary...')} 
             maxLength={LIMITS.MAX_DESC_CHARS}
           />
+
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Day-wise Itinerary</Text>
+          </View>
+          {editStructuredItinerary.map((dayItem, idx) => (
+            <View key={idx} style={{ marginBottom: 15, padding: 10, backgroundColor: '#f8f9fa', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <Text style={{ fontWeight: 'bold', color: '#2d3748' }}>Day {dayItem.day}</Text>
+                <TouchableOpacity onPress={() => {
+                  const newItinerary = [...editStructuredItinerary];
+                  newItinerary.splice(idx, 1);
+                  setEditStructuredItinerary(newItinerary.map((item, i) => ({ ...item, day: i + 1 })));
+                }}>
+                  <FontAwesome name="trash" size={16} color="#e53e3e" />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={[styles.input, { marginBottom: 10 }]}
+                placeholder="Title (e.g. Arrival at Manali)"
+                value={dayItem.title}
+                onChangeText={(text) => {
+                  const newItinerary = [...editStructuredItinerary];
+                  newItinerary[idx].title = text;
+                  setEditStructuredItinerary(newItinerary);
+                }}
+              />
+              <TextInput
+                style={[styles.input, styles.textArea, { marginBottom: 0 }]}
+                placeholder="Description of activities..."
+                value={dayItem.description}
+                onChangeText={(text) => {
+                  const newItinerary = [...editStructuredItinerary];
+                  newItinerary[idx].description = text;
+                  setEditStructuredItinerary(newItinerary);
+                }}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+          ))}
+          <TouchableOpacity 
+            style={{ flexDirection: 'row', alignItems: 'center', padding: 10, alignSelf: 'flex-start', marginBottom: 20 }}
+            onPress={() => {
+              setEditStructuredItinerary([
+                ...editStructuredItinerary, 
+                { day: editStructuredItinerary.length + 1, title: '', description: '' }
+              ]);
+            }}
+          >
+            <FontAwesome name="plus-circle" size={20} color="#00b0ff" />
+            <Text style={{ marginLeft: 8, color: '#00b0ff', fontWeight: 'bold' }}>Add Day</Text>
+          </TouchableOpacity>
 
           <View style={styles.labelRow}>
             <Text style={styles.label}>{t('vendor.pickupPoints', 'Pickup Points')}</Text>
@@ -1421,7 +1719,7 @@ export default function VendorDashboardScreen() {
                 </Text>
                 <Text style={styles.paymentInstructionsText}>
                   Travellers will contact you via WhatsApp and pay through your UPI ID manually. 
-                  You'll need to verify payments and confirm bookings yourself.
+                  You&apos;ll need to verify payments and confirm bookings yourself.
                 </Text>
               </View>
             )}

@@ -85,6 +85,8 @@ export interface Trip {
   vendorUPI: string[]; // Support multiple UPIs
   title: string;
   description: string;
+  category?: string;
+  destination?: string;
   
   // New Fields
   batches: TripBatch[];
@@ -93,6 +95,7 @@ export interface Trip {
   pickupPoints: PickupPoint[];
   
   itinerary: string;
+  structuredItinerary?: { day: number; title: string; description: string }[];
   inclusions: string[];
   exclusions: string[];
   thingsToCarry: string[];

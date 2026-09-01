@@ -9,35 +9,9 @@ import { db } from '../config/firebase';
 import { useAppContext } from '../context/AppContext';
 import { Booking } from '../data/trips';
 
-const StarRating = ({ tripId, guestName, onSubmit }: { tripId: string, guestName: string, onSubmit: (stars: number) => void }) => {
-  const [rating, setRating] = useState(0);
-  const [submitted, setSubmitted] = useState(false);
-  const { t } = useTranslation();
-
-  if (submitted) return <Text style={{ color: '#22c55e', fontSize: 12, marginTop: 8 }}>{t('bookings.thankYouReview', '✓ Thank you for your review!')}</Text>;
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
-      <Text style={{ fontSize: 12, color: '#718096', marginRight: 10 }}>{t('bookings.rateTrip', 'Rate this trip:')}</Text>
-      {[1, 2, 3, 4, 5].map(star => (
-        <TouchableOpacity 
-          key={star} 
-          onPress={() => {
-            setRating(star);
-            setSubmitted(true);
-            onSubmit(star);
-          }}
-          style={{ paddingHorizontal: 2 }}
-        >
-          <FontAwesome name={star <= rating ? "star" : "star-o"} size={20} color="#f59e0b" />
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-};
 
 export default function MyBookingsScreen() {
-  const { userProfile, submitRating } = useAppContext();
+  const { userProfile } = useAppContext();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const { t } = useTranslation();
@@ -114,14 +88,6 @@ export default function MyBookingsScreen() {
               <Text style={styles.tripTitle}>{item.travelerName}&apos;s Trip</Text>
               <Text style={styles.details}>{t('bookings.package', 'Package')}: {item.packageName}</Text>
               <Text style={styles.details}>{t('bookings.totalPaid', 'Total Paid')}: ₹{item.totalPrice}</Text>
-              
-              <StarRating 
-                tripId={item.tripId} 
-                guestName={item.travelerName} 
-                onSubmit={(stars) => {
-                  submitRating(item.tripId, { guestName: item.travelerName, stars, createdAt: Date.now() });
-                }} 
-              />
             </View>
           )}
           ListEmptyComponent={

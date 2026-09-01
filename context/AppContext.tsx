@@ -85,6 +85,7 @@ interface UserProfile {
   pushToken?: string;
   role?: 'vendor' | 'traveller';
   paymentSettings?: VendorPaymentSettings; // Vendor's payment gateway settings
+  discountCodes?: { code: string; discountPercent: number; maxUses: number; usedCount: number }[]; // Vendor's promo codes
 }
 
 interface AppContextType {
@@ -102,7 +103,6 @@ interface AppContextType {
   deleteTrip: (tripId: string) => Promise<void>;
   bookTrip: (booking: Omit<Booking, 'id'>) => Promise<void>;
   updateBookingStatus: (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled' | 'failed') => Promise<void>;
-  submitRating: (tripId: string, rating: Rating) => Promise<void>;
   fetchMoreTrips: () => Promise<void>;
   hasMoreTrips: boolean;
   refreshTrips: () => Promise<void>;
@@ -641,13 +641,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const submitRating = async (tripId: string, rating: Rating) => {
-    const tripRef = doc(db, 'trips', tripId);
-    await updateDoc(tripRef, { ratings: arrayUnion(rating) });
-  };
 
   return (
-    <AppContext.Provider value={{ trips, vendorBookings, loading, loginLoading, userProfile, loginWithGoogle, mockVendorLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, submitRating, fetchMoreTrips, hasMoreTrips, refreshTrips, isOnline }}>
+    <AppContext.Provider value={{ trips, vendorBookings, loading, loginLoading, userProfile, loginWithGoogle, mockVendorLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, fetchMoreTrips, hasMoreTrips, refreshTrips, isOnline }}>
       {children}
     </AppContext.Provider>
   );

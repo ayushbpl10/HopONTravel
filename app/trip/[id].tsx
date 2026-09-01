@@ -8,17 +8,91 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Dimensions, Linking, Modal, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import TripMap from '../../components/TripMap';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { useAppContext } from '../../context/AppContext';
 import { useLiveTracking } from '../../hooks/useLiveTracking';
+import { useWishlist } from '../../hooks/useWishlist';
 
 const { width } = Dimensions.get('window');
+
+const CountdownTimer = ({ dateDuration }: { dateDuration: string }) => {
+  const [timeLeft, setTimeLeft] = useState<{ days: number, hours: number, minutes: number } | null>(null);
+
+  useEffect(() => {
+    // Attempt to parse start date from "15 Aug - 17 Aug" format
+    let targetDate = new Date();
+    try {
+      const parts = dateDuration.split('-');
+      if (parts.length > 0) {
+        // Create a fake valid date string by appending the current year if it's missing
+        let startStr = parts[0].trim();
+        if (!startStr.match(/\d{4}/)) {
+          startStr += ` ${new Date().getFullYear()}`;
+        }
+        const parsed = new Date(startStr);
+        if (!isNaN(parsed.getTime())) {
+          targetDate = parsed;
+          // Set to 6 AM by default if no time
+          targetDate.setHours(6, 0, 0, 0);
+        }
+      }
+    } catch(e) {}
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const diff = targetDate.getTime() - now.getTime();
+      
+      if (diff > 0) {
+        setTimeLeft({
+          days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+          hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+          minutes: Math.floor((diff / 1000 / 60) % 60)
+        });
+      } else {
+        setTimeLeft(null);
+      }
+    }, 60000); // update every minute
+
+    // Initial call
+    const now = new Date();
+    const diff = targetDate.getTime() - now.getTime();
+    if (diff > 0) {
+      setTimeLeft({
+        days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+        minutes: Math.floor((diff / 1000 / 60) % 60)
+      });
+    }
+
+    return () => clearInterval(interval);
+  }, [dateDuration]);
+
+  if (!timeLeft) return null;
+
+  return (
+    <View style={styles.countdownContainer}>
+      <Text style={styles.countdownTitle}>⏳ Starts In</Text>
+      <View style={styles.countdownRow}>
+        <View style={styles.countdownBox}><Text style={styles.countdownNum}>{timeLeft.days}</Text><Text style={styles.countdownLabel}>Days</Text></View>
+        <Text style={styles.countdownSep}>:</Text>
+        <View style={styles.countdownBox}><Text style={styles.countdownNum}>{timeLeft.hours}</Text><Text style={styles.countdownLabel}>Hours</Text></View>
+        <Text style={styles.countdownSep}>:</Text>
+        <View style={styles.countdownBox}><Text style={styles.countdownNum}>{timeLeft.minutes}</Text><Text style={styles.countdownLabel}>Mins</Text></View>
+      </View>
+    </View>
+  );
+};
 
 export default function TripDetailScreen() {
   const { id } = useLocalSearchParams();
   const { trips, userProfile, bookTrip } = useAppContext();
   const trip = trips.find((t) => t.id === id);
   const { liveState, guestId, joinAsGuest, updateGuestLocation } = useLiveTracking(id as string);
+  const { wishlistedIds, toggleWishlist } = useWishlist();
   const { t } = useTranslation();
+
+  const isWishlisted = trip ? wishlistedIds.includes(trip.id) : false;
 
   const [isJoinModalVisible, setIsJoinModalVisible] = useState(false);
   const [guestName, setGuestName] = useState('');
@@ -31,6 +105,10 @@ export default function TripDetailScreen() {
   const [seats, setSeats] = useState<number>(1);
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+  const [discountCode, setDiscountCode] = useState('');
+  const [discountPercent, setDiscountPercent] = useState(0);
+  const [isApplyingDiscount, setIsApplyingDiscount] = useState(false);
 
   const handleImageScroll = (event: any) => {
     const scrollPosition = event.nativeEvent.contentOffset.x;
@@ -59,10 +137,38 @@ export default function TripDetailScreen() {
     [selectedAddOns, trip?.addOns]
   );
   
-  const totalPrice = useMemo(() => 
-    (basePrice + addOnsPrice) * seats,
-    [basePrice, addOnsPrice, seats]
-  );
+  const handleApplyDiscount = async () => {
+    if (!discountCode.trim() || !trip?.vendorId) return;
+    setIsApplyingDiscount(true);
+    try {
+      const vendorRef = doc(db, 'vendors', trip.vendorId);
+      const vendorSnap = await getDoc(vendorRef);
+      if (vendorSnap.exists()) {
+        const vendorData = vendorSnap.data();
+        const codeData = vendorData.discountCodes?.find((c: any) => c.code === discountCode.trim().toUpperCase());
+        if (codeData && codeData.usedCount < codeData.maxUses) {
+          setDiscountPercent(codeData.discountPercent);
+          Alert.alert('Applied', `${codeData.discountPercent}% discount applied successfully!`);
+        } else {
+          Alert.alert('Invalid Code', 'This code is invalid or has expired.');
+          setDiscountPercent(0);
+        }
+      } else {
+        Alert.alert('Error', 'Could not verify code.');
+        setDiscountPercent(0);
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Failed to apply discount.');
+      setDiscountPercent(0);
+    } finally {
+      setIsApplyingDiscount(false);
+    }
+  };
+
+  const totalPrice = useMemo(() => {
+    const subtotal = (basePrice + addOnsPrice) * seats;
+    return subtotal - (subtotal * (discountPercent / 100));
+  }, [basePrice, addOnsPrice, seats, discountPercent]);
 
   let etaMins = 0;
   let distanceKm = 0;
@@ -213,6 +319,12 @@ export default function TripDetailScreen() {
             </View>
           )}
         </ScrollView>
+        <TouchableOpacity 
+          style={styles.wishlistBtn}
+          onPress={() => trip && toggleWishlist(trip.id)}
+        >
+          <FontAwesome name={isWishlisted ? "heart" : "heart-o"} size={24} color={isWishlisted ? "#ef4444" : "#fff"} />
+        </TouchableOpacity>
         {/* Page Indicator Dots */}
         {trip.images && trip.images.length > 1 && (
           <View style={styles.dotsContainer}>
@@ -243,6 +355,10 @@ export default function TripDetailScreen() {
           </View>
           <Text style={styles.price}>₹{basePrice}</Text>
         </View>
+
+        {trip.batches && trip.batches.length > 0 && trip.tripStatus !== 'started' && trip.tripStatus !== 'completed' && (
+          <CountdownTimer dateDuration={trip.batches[0].dateDuration} />
+        )}
 
         {/* Live Trip Section */}
         {trip.tripStatus === 'started' && (
@@ -343,7 +459,28 @@ export default function TripDetailScreen() {
         )}
 
         {/* Itinerary */}
-        {trip.itinerary ? (
+        {trip.structuredItinerary && trip.structuredItinerary.length > 0 ? (
+          <View style={styles.itinerarySection}>
+            <Text style={styles.sectionTitle}>{t('tripDetails.itinerary', 'Itinerary')}</Text>
+            {trip.structuredItinerary.map((dayItem, i) => {
+              const isExpanded = expandedDay === i;
+              
+              return (
+                <View key={i} style={styles.itineraryCard}>
+                  <TouchableOpacity style={styles.itineraryHeader} onPress={() => setExpandedDay(isExpanded ? null : i)}>
+                    <Text style={styles.itineraryDay}>Day {dayItem.day}: {dayItem.title}</Text>
+                    <FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={14} color="#718096" />
+                  </TouchableOpacity>
+                  {isExpanded && (
+                    <View style={styles.itineraryContent}>
+                      <Text style={styles.itineraryText}>{dayItem.description}</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        ) : trip.itinerary ? (
           <View style={styles.itinerarySection}>
             <Text style={styles.sectionTitle}>{t('tripDetails.itinerary', 'Itinerary')}</Text>
             {trip.itinerary.split('Day ').filter((d: string) => d.trim() !== '').map((dayText: string, i: number) => {
@@ -482,6 +619,32 @@ export default function TripDetailScreen() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Promo Code Section */}
+          <View style={{ marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
+            <Text style={styles.selectionLabel}>Promo Code</Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TextInput
+                style={{ flex: 1, borderWidth: 1, borderColor: '#cbd5e0', borderRadius: 8, paddingHorizontal: 12, height: 48, backgroundColor: '#fff', textTransform: 'uppercase' }}
+                placeholder="Enter Code"
+                value={discountCode}
+                onChangeText={setDiscountCode}
+                autoCapitalize="characters"
+              />
+              <TouchableOpacity 
+                style={{ backgroundColor: discountPercent > 0 ? '#10b981' : '#0ea5e9', justifyContent: 'center', paddingHorizontal: 20, borderRadius: 8, height: 48 }}
+                onPress={handleApplyDiscount}
+                disabled={isApplyingDiscount || discountPercent > 0}
+              >
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>{discountPercent > 0 ? 'Applied' : (isApplyingDiscount ? '...' : 'Apply')}</Text>
+              </TouchableOpacity>
+            </View>
+            {discountPercent > 0 && (
+              <Text style={{ color: '#10b981', fontSize: 13, marginTop: 6, fontWeight: '500' }}>
+                🎉 {discountPercent}% discount applied!
+              </Text>
+            )}
+          </View>
         </View>
 
         <View style={styles.totalBox}>
@@ -539,6 +702,18 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '800', color: '#1a1a1a' },
   date: { fontSize: 14, color: '#718096', marginTop: 6, fontWeight: '500' },
   price: { fontSize: 24, fontWeight: 'bold', color: '#00b0ff' },
+  shareIconText: { marginLeft: 8, fontSize: 16, fontWeight: 'bold', color: '#1a202c' },
+  wishlistBtn: {
+    position: 'absolute', top: 16, right: 16, zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 25
+  },
+  countdownContainer: { backgroundColor: '#f0f9ff', padding: 12, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: '#bae6fd', alignItems: 'center' },
+  countdownTitle: { color: '#0369a1', fontWeight: 'bold', marginBottom: 8, fontSize: 14 },
+  countdownRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  countdownBox: { backgroundColor: '#fff', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', minWidth: 60, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 },
+  countdownNum: { fontSize: 18, fontWeight: 'bold', color: '#0f172a' },
+  countdownLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', marginTop: 2, fontWeight: '600' },
+  countdownSep: { fontSize: 20, fontWeight: 'bold', color: '#bae6fd', marginBottom: 12 },
   
   liveSection: { backgroundColor: '#f8f9fa', padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#e2e8f0' },
   vehicleImage: { width: '100%', height: 150, borderRadius: 8, marginBottom: 12 },
