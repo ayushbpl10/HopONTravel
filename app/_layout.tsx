@@ -13,19 +13,31 @@ import { changeLanguage } from '../config/i18n';
 import '../utils/backgroundLocation'; // Register background task
 
 function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: any) {
-  const { userProfile } = useAppContext();
-  const [showUserModal, setShowUserModal] = useState(false);
+  const { userProfile, loginWithGoogle } = useAppContext();
   const router = useRouter();
+  
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
-  const handleUserOptionSelect = (option: 'traveller' | 'vendor') => {
-    setShowUserModal(false);
-    if (option === 'traveller') {
-      router.push('/booking-status');
+  const handleTravellerPress = () => {
+    if (userProfile?.role === 'traveller') {
+      router.push('/my-bookings');
+    } else if (userProfile?.role === 'vendor') {
+      Alert.alert('Notice', 'You are logged in as a Vendor. Please logout first to switch roles.');
     } else {
-      router.push('/vendor-dashboard');
+      setShowLoginModal(true);
     }
   };
-  
+
+  const handleVendorPress = () => {
+    if (userProfile?.role === 'vendor') {
+      router.push('/vendor-dashboard');
+    } else if (userProfile?.role === 'traveller') {
+      Alert.alert('Notice', 'You are logged in as a Traveller. Please logout first to switch roles.');
+    } else {
+      setShowLoginModal(true);
+    }
+  };
+
   return (
     <>
       {/* Language Selection Modal */}
@@ -49,26 +61,33 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
         </TouchableOpacity>
       </Modal>
 
-      {/* User Type Selection Modal */}
-      <Modal visible={showUserModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowUserModal(false)}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Continue as</Text>
-            <TouchableOpacity style={styles.userOption} onPress={() => handleUserOptionSelect('traveller')}>
-              <FontAwesome name="suitcase" size={20} color="#00b0ff" style={{ marginRight: 12 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.userOptionTitle}>Traveller</Text>
-                <Text style={styles.userOptionDesc}>Track bookings & join trips</Text>
-              </View>
-              <FontAwesome name="chevron-right" size={14} color="#a0aec0" />
+      <Modal visible={showLoginModal} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowLoginModal(false)}>
+          <View style={[styles.modalContent, { width: 300, padding: 25 }]}>
+            <Text style={styles.modalTitle}>Welcome to HopON</Text>
+            <Text style={{ textAlign: 'center', marginBottom: 20, color: '#666' }}>Please select how you want to continue.</Text>
+
+            <TouchableOpacity 
+              style={[styles.loginRoleBtn, { backgroundColor: '#00b0ff' }]} 
+              onPress={async () => {
+                setShowLoginModal(false);
+                await loginWithGoogle('traveller');
+              }}
+            >
+              <FontAwesome name="user" size={20} color="white" style={{ marginRight: 10 }} />
+              <Text style={styles.loginRoleBtnText}>Continue as Traveller</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.userOption, { borderBottomWidth: 0 }]} onPress={() => handleUserOptionSelect('vendor')}>
-              <FontAwesome name="briefcase" size={20} color="#00b0ff" style={{ marginRight: 12 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.userOptionTitle}>Vendor</Text>
-                <Text style={styles.userOptionDesc}>Manage trips & bookings</Text>
-              </View>
-              <FontAwesome name="chevron-right" size={14} color="#a0aec0" />
+
+            <TouchableOpacity 
+              style={[styles.loginRoleBtn, { backgroundColor: '#4a5568', marginTop: 15 }]} 
+              onPress={async () => {
+                setShowLoginModal(false);
+                await loginWithGoogle('vendor');
+                router.push('/vendor-dashboard');
+              }}
+            >
+              <FontAwesome name="briefcase" size={20} color="white" style={{ marginRight: 10 }} />
+              <Text style={styles.loginRoleBtnText}>Continue as Vendor</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -89,16 +108,19 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
             headerRight: () => (
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <TouchableOpacity 
-                  style={{ marginRight: 20 }}
+                  style={{ marginRight: 15 }}
                   onPress={() => setShowLangModal(true)}
                 >
                   <FontAwesome name="language" size={24} color="#00b0ff" />
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={{ marginRight: 15 }}
-                  onPress={() => setShowUserModal(true)}
-                >
-                  <FontAwesome name="user-circle" size={24} color="#00b0ff" />
+                {/* Traveller Icon */}
+                <TouchableOpacity style={{ marginRight: 15 }} onPress={handleTravellerPress}>
+                  <FontAwesome name="user" size={24} color="#00b0ff" />
+                </TouchableOpacity>
+
+                {/* Vendor Icon */}
+                <TouchableOpacity style={{ marginRight: 10 }} onPress={handleVendorPress}>
+                  <FontAwesome name="briefcase" size={24} color="#00b0ff" />
                 </TouchableOpacity>
               </View>
             )
@@ -168,22 +190,17 @@ const styles = StyleSheet.create({
     color: '#00b0ff',
     fontWeight: '500'
   },
-  userOption: {
-    width: '100%',
+  loginRoleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#edf2f7',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 8,
   },
-  userOptionTitle: {
+  loginRoleBtnText: {
+    color: 'white',
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1a202c',
-    marginBottom: 2,
-  },
-  userOptionDesc: {
-    fontSize: 12,
-    color: '#718096',
-  },
+    fontWeight: 'bold'
+  }
 });

@@ -633,7 +633,7 @@ export default function VendorDashboardScreen() {
             ) : (
               <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
             )}
-            <Text style={styles.googleButtonText}>{loginLoading ? 'Signing in...' : t('vendor.signInWithGoogle', 'Sign in with Google')}</Text>
+            <Text style={styles.googleButtonText}>{loginLoading ? 'Signing in...' : t('vendor.signInWithGoogle', 'Vendor Login')}</Text>
           </TouchableOpacity>
 
           {Platform.OS === 'web' && (
