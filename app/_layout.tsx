@@ -11,7 +11,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { changeLanguage } from '../config/i18n';
 import '../utils/backgroundLocation'; // Register background task
-import OfflineIndicator from '../components/OfflineIndicator';
+import { OfflineIndicator } from '../components/OfflineIndicator';
 
 function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: any) {
   const { userProfile, loginWithGoogle } = useAppContext();
