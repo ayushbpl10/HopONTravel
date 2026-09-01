@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { addDoc, collection } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import OllieLoading from '../components/OllieLoading';
 import { db } from '../config/firebase';
 import { useAppContext, VendorPaymentSettings } from '../context/AppContext';
@@ -168,6 +168,21 @@ export default function VendorDashboardScreen() {
       Alert.alert('Error', 'Failed to save payment settings. Please try again.');
     } finally {
       setIsSavingPayment(false);
+    }
+  };
+
+  const handleShareTrip = async (trip: Trip) => {
+    try {
+      const webLink = `https://abtohghoomle.com/trip.html?id=${trip.id}`;
+      const appLink = `hopontravel://trip/${trip.id}`;
+      const message = `Check out this amazing trip: ${trip.title}! 🚐🔥\n\n🌐 Book on Web: ${webLink}\n📱 Open in App: ${appLink}`;
+      
+      await Share.share({
+        message,
+        title: `Book ${trip.title}`,
+      });
+    } catch (error) {
+      console.error('Error sharing trip:', error);
     }
   };
 
@@ -879,6 +894,24 @@ export default function VendorDashboardScreen() {
                         <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Start Live</Text>
                       </TouchableOpacity>
                     )}
+                    {/* Share Button */}
+                    <TouchableOpacity 
+                      style={{ 
+                        paddingVertical: 6, 
+                        paddingHorizontal: 12, 
+                        backgroundColor: '#3b82f6', 
+                        borderRadius: 6, 
+                        flexDirection: 'row', 
+                        alignItems: 'center',
+                      }} 
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleShareTrip(trip);
+                      }}
+                    >
+                      <FontAwesome name="share-alt" size={10} color="white" style={{ marginRight: 6 }} />
+                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Share</Text>
+                    </TouchableOpacity>
                     {/* Export Button */}
                     <TouchableOpacity 
                       style={{ 

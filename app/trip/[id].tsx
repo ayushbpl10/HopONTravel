@@ -6,7 +6,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { getDistance } from 'geolib';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, Dimensions, Linking, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Dimensions, Linking, Modal, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import TripMap from '../../components/TripMap';
 import { useAppContext } from '../../context/AppContext';
 import { useLiveTracking } from '../../hooks/useLiveTracking';
@@ -173,12 +173,15 @@ export default function TripDetailScreen() {
   const handleShareTrip = async () => {
     try {
       const tripDate = trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : 'TBD';
+      const webLink = `https://abtohghoomle.com/trip.html?id=${trip.id}`;
+      const appLink = `hopontravel://trip/${trip.id}`;
       const message = `Check out this amazing trip! 🌍\n\n` +
         `*${trip.title}*\n` +
         `📅 ${tripDate}\n` +
         `💰 Starting from ₹${basePrice}\n` +
         `👤 Organized by ${trip.vendorName}\n\n` +
-        `Book now on Ab Toh Ghoom Le app!`;
+        `🌐 Book on Web: ${webLink}\n` +
+        `📱 Open in App: ${appLink}`;
       
       await Share.share({
         message,
