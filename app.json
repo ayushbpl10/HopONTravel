@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ab Toh Ghoom Le",
     "slug": "HopONTravel",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/images/app_icon.png",
     "scheme": "hopontravel",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.hopontravel.app",
-      "versionCode": 10,
+      "versionCode": 11,
       "googleServicesFile": "./config/google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
