@@ -34,7 +34,7 @@ export default function MyBookingsScreen() {
       } catch (e) {}
 
       try {
-        const q = query(collection(db, 'bookings'), where('userId', '==', userProfile.id));
+        const q = query(collection(db, 'bookings'), where('travelerEmail', '==', userProfile.email));
         const snap = await getDocs(q);
         const data: Booking[] = [];
         snap.forEach(doc => data.push({ id: doc.id, ...doc.data() } as Booking));

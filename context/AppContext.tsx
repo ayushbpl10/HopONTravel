@@ -406,10 +406,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         loadVendorBookings(profile.id);
       }
     } catch (error: any) {
-      console.error('Google Sign-In Error:', error);
+      const nativeCode = error?.code ? `(Code: ${error.code})` : '';
+      const debugMsg = `Google Sign-In Error ${nativeCode}: ${error?.message || 'Unknown error'}`;
+      
+      console.error(debugMsg, error);
+      Logger.error(debugMsg, error); // Push to Firestore error_logs
+
       Alert.alert(
         'Login Failed', 
-        `Could not connect to Google.\nError: ${error.message || 'Unknown'}`
+        `Could not connect to Google.\n\n${debugMsg}\n\nTip: If Code is 10 (DEVELOPER_ERROR), the Android App SHA-1 fingerprint in Firebase Console is missing or incorrect.`
       );
     } finally {
       setLoginLoading(false);

@@ -30,6 +30,14 @@
           }
         },
         {
+          "client_id": "792083213033-kdftmpkb3471621ejhro8co207dn5qfb.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hopontravel.app",
+            "certificate_hash": "cbf95012380c5f37e5394ef407e4eb0169fb2b5e"
+          }
+        },
+        {
           "client_id": "792083213033-kjl1itpr77e4oh7mj333qp6uels5dmhi.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
