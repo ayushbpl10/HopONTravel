@@ -82,7 +82,7 @@ export default function HomeScreen() {
   const { trips, loading, fetchMoreTrips, hasMoreTrips, refreshTrips } = useAppContext();
   const { wishlistedIds, toggleWishlist } = useWishlist();
   const { colors, isDark } = useTheme();
-  const styles = getStyles(colors);
+  const styles = getStyles(colors, isDark);
   const [refreshing, setRefreshing] = useState(false);
   const { t } = useTranslation();
 
@@ -270,7 +270,7 @@ export default function HomeScreen() {
   );
 }
 
-const getStyles = (colors: ThemeColors) => StyleSheet.create({
+const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   heroSection: {
     height: 180, // Reduced from 280
