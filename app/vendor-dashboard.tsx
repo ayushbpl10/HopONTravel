@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { addDoc, collection } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
+import { useTheme, ThemeColors } from '../context/ThemeContext';
 import { ActivityIndicator, Alert, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import OllieLoading from '../components/OllieLoading';
 import { db } from '../config/firebase';
@@ -33,6 +34,8 @@ const LIMITS = {
 };
 
 export default function VendorDashboardScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = getStyles(colors);
   const { trips, vendorBookings, updateBookingStatus, userProfile, loginWithGoogle, mockVendorLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip, loginLoading, isOnline } = useAppContext();
   const [upiInput, setUpiInput] = useState(userProfile?.upiId || '');
   const [waInput, setWaInput] = useState(userProfile?.whatsappNumber || '');
@@ -717,7 +720,7 @@ export default function VendorDashboardScreen() {
           );
         }
       }}>
-        <FontAwesome name="bug" size={18} color="#4a5568" style={{ marginRight: 10 }} />
+        <FontAwesome name="bug" size={18} color={colors.textSecondary} style={{ marginRight: 10 }} />
         <Text style={styles.actionButtonText}>Report Issue with Logs</Text>
       </TouchableOpacity>
 
@@ -729,7 +732,7 @@ export default function VendorDashboardScreen() {
           Alert.alert('Error', 'Could not open UPI App. Please ensure GPay, PhonePe, or Paytm is installed.');
         }
       }}>
-        <FontAwesome name="heart" size={18} color="white" style={{ marginRight: 10 }} />
+        <FontAwesome name="heart" size={18} color={colors.card} style={{ marginRight: 10 }} />
         <Text style={styles.donateButtonText}>Donate to Support Us</Text>
       </TouchableOpacity>
     </View>
@@ -751,19 +754,19 @@ export default function VendorDashboardScreen() {
             disabled={loginLoading}
           >
             {loginLoading ? (
-              <ActivityIndicator color="white" style={{ marginRight: 10 }} />
+              <ActivityIndicator color={colors.card} style={{ marginRight: 10 }} />
             ) : (
-              <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
+              <FontAwesome name="google" size={20} color={colors.card} style={{ marginRight: 10 }} />
             )}
             <Text style={styles.googleButtonText}>{loginLoading ? 'Signing in...' : t('vendor.signInWithGoogle', 'Vendor Login')}</Text>
           </TouchableOpacity>
 
           {Platform.OS === 'web' && (
             <TouchableOpacity 
-              style={[styles.googleButton, { backgroundColor: '#4a5568', marginTop: 15 }]} 
+              style={[styles.googleButton, { backgroundColor: colors.textSecondary, marginTop: 15 }]} 
               onPress={mockVendorLogin}
             >
-              <FontAwesome name="code" size={20} color="white" style={{ marginRight: 10 }} />
+              <FontAwesome name="code" size={20} color={colors.card} style={{ marginRight: 10 }} />
               <Text style={styles.googleButtonText}>Dev Login (Web Only)</Text>
             </TouchableOpacity>
           )}
@@ -779,7 +782,7 @@ export default function VendorDashboardScreen() {
     return (
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer}>
         <View style={[styles.loginCard, { marginBottom: 20 }]}>
-          <FontAwesome name="lock" size={50} color="#cbd5e0" style={{ marginBottom: 20 }} />
+          <FontAwesome name="lock" size={50} color={colors.border} style={{ marginBottom: 20 }} />
           <Text style={styles.title}>Access Denied</Text>
           <Text style={styles.subtitle}>
             You are currently logged in as a traveller. To access the Vendor Portal, upgrade your account.
@@ -790,14 +793,14 @@ export default function VendorDashboardScreen() {
             disabled={loginLoading}
           >
             {loginLoading ? (
-              <ActivityIndicator color="white" style={{ marginRight: 10 }} />
+              <ActivityIndicator color={colors.card} style={{ marginRight: 10 }} />
             ) : (
-              <FontAwesome name="google" size={20} color="white" style={{ marginRight: 10 }} />
+              <FontAwesome name="google" size={20} color={colors.card} style={{ marginRight: 10 }} />
             )}
             <Text style={styles.googleButtonText}>{loginLoading ? 'Upgrading...' : 'Upgrade to Vendor Account'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={{ marginTop: 20 }} onPress={logout}>
-            <Text style={{ color: '#00b0ff', fontWeight: 'bold', fontSize: 15 }}>Logout</Text>
+            <Text style={{ color: colors.primary, fontWeight: 'bold', fontSize: 15 }}>Logout</Text>
           </TouchableOpacity>
         </View>
         {renderSupportFeedback()}
@@ -829,7 +832,7 @@ export default function VendorDashboardScreen() {
           </View>
           <View style={{ flexDirection: 'row', gap: 15, alignItems: 'center' }}>
             <TouchableOpacity onPress={() => router.push('/my-bookings' as any)}>
-               <FontAwesome name="ticket" size={24} color="#00b0ff" />
+               <FontAwesome name="ticket" size={24} color={colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.logoutSmall} onPress={handleLogout}>
                <FontAwesome name="sign-out" size={20} color="#e53e3e" />
@@ -865,7 +868,7 @@ export default function VendorDashboardScreen() {
           <View style={styles.paymentInfoBox}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <FontAwesome name="credit-card" size={16} color="#00b0ff" style={{ marginRight: 8 }} />
+                <FontAwesome name="credit-card" size={16} color={colors.primary} style={{ marginRight: 8 }} />
                 <Text style={styles.paymentInfoTitle}>Online Payments</Text>
               </View>
               <View style={[
@@ -900,7 +903,7 @@ export default function VendorDashboardScreen() {
               style={[styles.saveButton, { marginTop: 12, backgroundColor: userProfile?.paymentSettings?.enabled ? '#64748b' : '#00b0ff' }]}
               onPress={() => setIsPaymentSetupModalVisible(true)}
             >
-              <FontAwesome name="cog" size={14} color="#fff" style={{ marginRight: 8 }} />
+              <FontAwesome name="cog" size={14} color={colors.card} style={{ marginRight: 8 }} />
               <Text style={styles.saveButtonText}>
                 {userProfile?.paymentSettings?.enabled ? 'Manage Payment Settings' : 'Set Up Razorpay'}
               </Text>
@@ -933,7 +936,7 @@ export default function VendorDashboardScreen() {
                       <Text style={{ fontSize: 12, color: '#6b7280' }}>{code.usedCount} / {code.maxUses} used</Text>
                     </View>
                     <TouchableOpacity onPress={() => handleRemoveDiscountCode(code.code)} style={{ padding: 5 }}>
-                      <FontAwesome name="trash" size={16} color="#ef4444" />
+                      <FontAwesome name="trash" size={16} color={colors.danger} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -991,14 +994,14 @@ export default function VendorDashboardScreen() {
                 style={[styles.addNewBtn, { backgroundColor: '#8b5cf6' }]} 
                 onPress={() => setIsAiModalVisible(true)}
               >
-                 <FontAwesome name="magic" size={14} color="white" />
+                 <FontAwesome name="magic" size={14} color={colors.card} />
                  <Text style={styles.addNewBtnText}>{t('vendor.aiImport', 'AI Import')}</Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.addNewBtn, myTrips.length >= LIMITS.MAX_TRIPS_PER_VENDOR && styles.disabledBtn]} 
                 onPress={startAddingNew}
               >
-                 <FontAwesome name="plus" size={14} color="white" />
+                 <FontAwesome name="plus" size={14} color={colors.card} />
                  <Text style={styles.addNewBtnText}>{t('vendor.addNewTrip', 'Add New')}</Text>
               </TouchableOpacity>
             </View>
@@ -1006,11 +1009,11 @@ export default function VendorDashboardScreen() {
           
           {myTrips.length === 0 ? (
             <View style={styles.emptyStateContainer}>
-              <FontAwesome name="map-o" size={64} color="#cbd5e0" />
+              <FontAwesome name="map-o" size={64} color={colors.border} />
               <Text style={styles.emptyStateTitle}>No trips yet</Text>
               <Text style={styles.emptyStateSubtitle}>Create your first trip listing and start accepting bookings from travellers!</Text>
               <TouchableOpacity style={styles.emptyStateCta} onPress={startAddingNew}>
-                <FontAwesome name="plus" size={14} color="white" style={{ marginRight: 8 }} />
+                <FontAwesome name="plus" size={14} color={colors.card} style={{ marginRight: 8 }} />
                 <Text style={styles.emptyStateCtaText}>Create Your First Trip</Text>
               </TouchableOpacity>
             </View>
@@ -1043,8 +1046,8 @@ export default function VendorDashboardScreen() {
                           router.push(`/start-trip/${trip.id}` as any);
                         }}
                       >
-                        <FontAwesome name="play" size={10} color="white" style={{ marginRight: 6 }} />
-                        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Start Live</Text>
+                        <FontAwesome name="play" size={10} color={colors.card} style={{ marginRight: 6 }} />
+                        <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 12 }}>Start Live</Text>
                       </TouchableOpacity>
                     )}
                     {/* Share Button */}
@@ -1062,8 +1065,8 @@ export default function VendorDashboardScreen() {
                         handleShareTrip(trip);
                       }}
                     >
-                      <FontAwesome name="share-alt" size={10} color="white" style={{ marginRight: 6 }} />
-                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Share</Text>
+                      <FontAwesome name="share-alt" size={10} color={colors.card} style={{ marginRight: 6 }} />
+                      <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 12 }}>Share</Text>
                     </TouchableOpacity>
                     {/* Duplicate Button */}
                     <TouchableOpacity 
@@ -1080,8 +1083,8 @@ export default function VendorDashboardScreen() {
                         handleDuplicateTrip(trip);
                       }}
                     >
-                      <FontAwesome name="copy" size={10} color="white" style={{ marginRight: 6 }} />
-                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>Duplicate</Text>
+                      <FontAwesome name="copy" size={10} color={colors.card} style={{ marginRight: 6 }} />
+                      <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 12 }}>Duplicate</Text>
                     </TouchableOpacity>
                     {/* Export Button */}
                     <TouchableOpacity 
@@ -1101,11 +1104,11 @@ export default function VendorDashboardScreen() {
                       disabled={isExporting && exportingTripId === trip.id}
                     >
                       {exportingTripId === trip.id ? (
-                        <ActivityIndicator size="small" color="white" style={{ marginRight: 6 }} />
+                        <ActivityIndicator size="small" color={colors.card} style={{ marginRight: 6 }} />
                       ) : (
-                        <FontAwesome name={paidTripExports.has(trip.id) ? "download" : "rupee"} size={10} color="white" style={{ marginRight: 6 }} />
+                        <FontAwesome name={paidTripExports.has(trip.id) ? "download" : "rupee"} size={10} color={colors.card} style={{ marginRight: 6 }} />
                       )}
-                      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>
+                      <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 12 }}>
                         {paidTripExports.has(trip.id) ? 'Export' : `₹${EXPORT_CHARGE}`}
                       </Text>
                     </TouchableOpacity>
@@ -1136,13 +1139,13 @@ export default function VendorDashboardScreen() {
                     style={[styles.statusUpdateBtn, {backgroundColor: '#22c55e', paddingVertical: 6, paddingHorizontal: 12}]} 
                     onPress={() => handleBulkUpdate('confirmed')}
                   >
-                    <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Confirm All</Text>
+                    <Text style={{color: colors.card, fontWeight: 'bold', fontSize: 12}}>Confirm All</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
-                    style={[styles.statusUpdateBtn, {backgroundColor: '#ef4444', paddingVertical: 6, paddingHorizontal: 12}]} 
+                    style={[styles.statusUpdateBtn, {backgroundColor: colors.danger, paddingVertical: 6, paddingHorizontal: 12}]} 
                     onPress={() => handleBulkUpdate('cancelled')}
                   >
-                    <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Cancel All</Text>
+                    <Text style={{color: colors.card, fontWeight: 'bold', fontSize: 12}}>Cancel All</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1158,7 +1161,7 @@ export default function VendorDashboardScreen() {
                       <FontAwesome name={selectedBookings.has(booking.id) ? "check-square" : "square-o"} size={20} color={selectedBookings.has(booking.id) ? "#3b82f6" : "#cbd5e0"} />
                     </TouchableOpacity>
                     <Text style={styles.bookingIdText}>{booking.bookingId}</Text>
-                    <View style={[styles.statusBadge, booking.status === 'confirmed' ? {backgroundColor: '#dcfce7'} : booking.status === 'failed' ? {backgroundColor: '#fee2e2'} : {backgroundColor: '#fef3c7'}]}>
+                    <View style={[styles.statusBadge, booking.status === 'confirmed' ? {backgroundColor: colors.success} : booking.status === 'failed' ? {backgroundColor: '#fee2e2'} : {backgroundColor: '#fef3c7'}]}>
                       <Text style={[styles.statusText, booking.status === 'confirmed' ? {color: '#16a34a'} : booking.status === 'failed' ? {color: '#dc2626'} : {color: '#d97706'}]}>
                         {booking.status.toUpperCase()}
                       </Text>
@@ -1180,7 +1183,7 @@ export default function VendorDashboardScreen() {
                     </View>
                     <View style={styles.bookingRow}>
                       <FontAwesome name="rupee" size={14} color="#64748b" style={{width: 20}} />
-                      <Text style={[styles.bookingData, {fontWeight: 'bold', color: '#00b0ff'}]}>₹{booking.totalPrice}</Text>
+                      <Text style={[styles.bookingData, {fontWeight: 'bold', color: colors.primary}]}>₹{booking.totalPrice}</Text>
                     </View>
                   </View>
                   
@@ -1193,8 +1196,8 @@ export default function VendorDashboardScreen() {
                           Linking.openURL(`whatsapp://send?phone=${booking.travelerPhone.replace('+', '')}&text=${encodeURIComponent(message)}`);
                         }}
                       >
-                        <FontAwesome name="whatsapp" size={16} color="#fff" style={{marginRight: 4}} />
-                        <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Message</Text>
+                        <FontAwesome name="whatsapp" size={16} color={colors.card} style={{marginRight: 4}} />
+                        <Text style={{color: colors.card, fontWeight: 'bold', fontSize: 12}}>Message</Text>
                       </TouchableOpacity>
                     )}
                     {booking.status !== 'confirmed' && (
@@ -1202,15 +1205,15 @@ export default function VendorDashboardScreen() {
                         style={[styles.statusUpdateBtn, {backgroundColor: '#22c55e'}]} 
                         onPress={() => updateBookingStatus(booking.id, 'confirmed')}
                       >
-                        <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Mark Success</Text>
+                        <Text style={{color: colors.card, fontWeight: 'bold', fontSize: 12}}>Mark Success</Text>
                       </TouchableOpacity>
                     )}
                     {booking.status !== 'failed' && (
                       <TouchableOpacity 
-                        style={[styles.statusUpdateBtn, {backgroundColor: '#ef4444'}]} 
+                        style={[styles.statusUpdateBtn, {backgroundColor: colors.danger}]} 
                         onPress={() => updateBookingStatus(booking.id, 'failed')}
                       >
-                        <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 12}}>Mark Failed</Text>
+                        <Text style={{color: colors.card, fontWeight: 'bold', fontSize: 12}}>Mark Failed</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -1227,7 +1230,7 @@ export default function VendorDashboardScreen() {
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{isAddingNew ? 'List New Trip' : 'Edit Trip'}</Text>
             <TouchableOpacity onPress={() => setEditingTrip(null)}>
-              <FontAwesome name="close" size={24} color="#333" />
+              <FontAwesome name="close" size={24} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
@@ -1346,9 +1349,9 @@ export default function VendorDashboardScreen() {
             <Text style={styles.label}>Day-wise Itinerary</Text>
           </View>
           {editStructuredItinerary.map((dayItem, idx) => (
-            <View key={idx} style={{ marginBottom: 15, padding: 10, backgroundColor: '#f8f9fa', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' }}>
+            <View key={idx} style={{ marginBottom: 15, padding: 10, backgroundColor: colors.background, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <Text style={{ fontWeight: 'bold', color: '#2d3748' }}>Day {dayItem.day}</Text>
+                <Text style={{ fontWeight: 'bold', color: colors.textPrimary }}>Day {dayItem.day}</Text>
                 <TouchableOpacity onPress={() => {
                   const newItinerary = [...editStructuredItinerary];
                   newItinerary.splice(idx, 1);
@@ -1390,15 +1393,15 @@ export default function VendorDashboardScreen() {
               ]);
             }}
           >
-            <FontAwesome name="plus-circle" size={20} color="#00b0ff" />
-            <Text style={{ marginLeft: 8, color: '#00b0ff', fontWeight: 'bold' }}>Add Day</Text>
+            <FontAwesome name="plus-circle" size={20} color={colors.primary} />
+            <Text style={{ marginLeft: 8, color: colors.primary, fontWeight: 'bold' }}>Add Day</Text>
           </TouchableOpacity>
 
           <View style={styles.labelRow}>
             <Text style={styles.label}>{t('vendor.pickupPoints', 'Pickup Points')}</Text>
           </View>
           {editPickupPoints.map((pt, idx) => (
-            <View key={idx} style={{ marginBottom: 15, padding: 10, backgroundColor: '#f8f9fa', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0' }}>
+            <View key={idx} style={{ marginBottom: 15, padding: 10, backgroundColor: colors.background, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
               <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
                 <TextInput 
                   style={[styles.input, { flex: 2, marginBottom: 0 }]} 
@@ -1466,7 +1469,7 @@ export default function VendorDashboardScreen() {
             style={{ padding: 10, alignSelf: 'flex-start', marginBottom: 15 }} 
             onPress={() => setEditPickupPoints([...editPickupPoints, { location: '', time: '' }])}
           >
-            <Text style={{ color: '#00b0ff', fontWeight: 'bold' }}>+ {t('vendor.addPickup', 'Add Pickup Point')}</Text>
+            <Text style={{ color: colors.primary, fontWeight: 'bold' }}>+ {t('vendor.addPickup', 'Add Pickup Point')}</Text>
           </TouchableOpacity>
 
           <View style={styles.row}>
@@ -1498,7 +1501,7 @@ export default function VendorDashboardScreen() {
             })}
             {editImages.length < LIMITS.MAX_IMAGES_PER_TRIP && (
               <TouchableOpacity style={styles.addImageBtn} onPress={pickImage}>
-                <FontAwesome name="plus" size={24} color="#00b0ff" />
+                <FontAwesome name="plus" size={24} color={colors.primary} />
                 <Text style={styles.addImageText}>Add</Text>
               </TouchableOpacity>
             )}
@@ -1537,7 +1540,7 @@ export default function VendorDashboardScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('vendor.aiImportTitle', 'AI WhatsApp Import')}</Text>
               <TouchableOpacity onPress={() => setIsAiModalVisible(false)} disabled={isParsing}>
-                <FontAwesome name="close" size={24} color="#333" />
+                <FontAwesome name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -1560,7 +1563,7 @@ export default function VendorDashboardScreen() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <Text style={[styles.label, { marginBottom: 0 }]}>{t('vendor.apiKey', 'API Key')}</Text>
               <TouchableOpacity onPress={() => Linking.openURL(aiProvider === 'gemini' ? 'https://aistudio.google.com/app/apikey' : 'https://platform.openai.com/api-keys')}>
-                <Text style={{ fontSize: 12, color: '#00b0ff', fontWeight: 'bold' }}>{t('vendor.getKey', 'Get Key')}</Text>
+                <Text style={{ fontSize: 12, color: colors.primary, fontWeight: 'bold' }}>{t('vendor.getKey', 'Get Key')}</Text>
               </TouchableOpacity>
             </View>
             <View style={{ position: 'relative', justifyContent: 'center' }}>
@@ -1576,13 +1579,13 @@ export default function VendorDashboardScreen() {
                 style={{ position: 'absolute', right: 10, top: 12 }} 
                 onPress={() => setShowApiKey(!showApiKey)}
               >
-                <FontAwesome name={showApiKey ? "eye-slash" : "eye"} size={20} color="#a0aec0" />
+                <FontAwesome name={showApiKey ? "eye-slash" : "eye"} size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             
             <View style={{flexDirection: 'row', alignItems: 'flex-start', marginBottom: 15, padding: 10, backgroundColor: '#e6f6ff', borderRadius: 8}}>
-              <FontAwesome name="info-circle" size={16} color="#00b0ff" style={{marginRight: 10, marginTop: 2}} />
-              <Text style={{flex: 1, fontSize: 12, color: '#4a5568', lineHeight: 18}}>
+              <FontAwesome name="info-circle" size={16} color={colors.primary} style={{marginRight: 10, marginTop: 2}} />
+              <Text style={{flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 18}}>
                 {t('vendor.apiKeyHelp', 'Help: To use AI Import, you need a free API key. Click "Get Key", sign in, generate a key, and paste it here. Your key is only used locally and never stored on our servers.')}
               </Text>
             </View>
@@ -1621,7 +1624,7 @@ export default function VendorDashboardScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Payment Gateway Setup</Text>
               <TouchableOpacity onPress={() => setIsPaymentSetupModalVisible(false)} disabled={isSavingPayment}>
-                <FontAwesome name="close" size={24} color="#333" />
+                <FontAwesome name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -1662,7 +1665,7 @@ export default function VendorDashboardScreen() {
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <Text style={[styles.label, { marginBottom: 0 }]}>Razorpay Key ID</Text>
                       <TouchableOpacity onPress={() => Linking.openURL('https://dashboard.razorpay.com/app/keys')}>
-                        <Text style={{ fontSize: 12, color: '#00b0ff', fontWeight: 'bold' }}>Get Key</Text>
+                        <Text style={{ fontSize: 12, color: colors.primary, fontWeight: 'bold' }}>Get Key</Text>
                       </TouchableOpacity>
                     </View>
                     <View style={{ position: 'relative', justifyContent: 'center' }}>
@@ -1678,7 +1681,7 @@ export default function VendorDashboardScreen() {
                         style={{ position: 'absolute', right: 10, top: 12 }} 
                         onPress={() => setShowRazorpayKey(!showRazorpayKey)}
                       >
-                        <FontAwesome name={showRazorpayKey ? "eye-slash" : "eye"} size={20} color="#a0aec0" />
+                        <FontAwesome name={showRazorpayKey ? "eye-slash" : "eye"} size={20} color={colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
 
@@ -1731,7 +1734,7 @@ export default function VendorDashboardScreen() {
             >
               {isSavingPayment ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <ActivityIndicator color="#fff" size="small" />
+                  <ActivityIndicator color={colors.card} size="small" />
                   <Text style={[styles.saveButtonText, { marginLeft: 10 }]}>Saving...</Text>
                 </View>
               ) : (
@@ -1747,10 +1750,10 @@ export default function VendorDashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   scrollContainer: {
     flex: 1,
-    backgroundColor: '#f0f2f5',
+    backgroundColor: colors.background,
   },
   contentContainer: {
     padding: 20,
@@ -1758,12 +1761,12 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: '#f0f2f5',
+    backgroundColor: colors.background,
     padding: 20,
     justifyContent: 'center',
   },
   loginCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.card,
     padding: 30,
     borderRadius: 16,
     alignItems: 'center',
@@ -1779,12 +1782,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.textPrimary,
     marginBottom: 10,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 30,
     lineHeight: 24,
@@ -1800,12 +1803,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   googleButtonText: {
-    color: '#ffffff',
+    color: colors.card,
     fontSize: 16,
     fontWeight: '600',
   },
   dashboardCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.card,
     padding: 24,
     borderRadius: 16,
     shadowColor: '#000',
@@ -1827,14 +1830,14 @@ const styles = StyleSheet.create({
   },
   emailText: {
     fontSize: 14,
-    color: '#718096',
+    color: colors.textSecondary,
   },
   logoutSmall: {
     padding: 10,
   },
   section: {
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: colors.border,
     paddingTop: 20,
     marginBottom: 30,
   },
@@ -1847,33 +1850,33 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#2d3748',
+    color: colors.textPrimary,
   },
   limitText: {
     fontSize: 12,
-    color: '#718096',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   addNewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#00b0ff',
+    backgroundColor: colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
   },
   addNewBtnText: {
-    color: 'white',
+    color: colors.card,
     fontSize: 12,
     fontWeight: 'bold',
     marginLeft: 6,
   },
   disabledBtn: {
-    backgroundColor: '#cbd5e0',
+    backgroundColor: colors.border,
   },
   label: {
     fontSize: 14,
-    color: '#4a5568',
+    color: colors.textSecondary,
     marginBottom: 8,
     fontWeight: '500',
   },
@@ -1885,25 +1888,25 @@ const styles = StyleSheet.create({
   },
   charCount: {
     fontSize: 12,
-    color: '#a0aec0',
+    color: colors.textSecondary,
   },
   hintText: {
     fontSize: 12,
-    color: '#a0aec0',
+    color: colors.textSecondary,
     fontStyle: 'italic',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#cbd5e0',
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    color: '#2d3748',
-    backgroundColor: '#f8f9fa',
+    color: colors.textPrimary,
+    backgroundColor: colors.background,
     marginBottom: 10,
   },
   saveButton: {
-    backgroundColor: '#00b0ff',
+    backgroundColor: colors.primary,
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
@@ -1925,22 +1928,22 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   disabledButton: {
-    backgroundColor: '#a0aec0',
+    backgroundColor: colors.textSecondary,
   },
   saveButtonText: {
-    color: '#ffffff',
+    color: colors.card,
     fontSize: 16,
     fontWeight: 'bold',
   },
   tripItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: colors.background,
     padding: 15,
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: colors.border,
   },
   tripInfo: {
     flex: 1,
@@ -1948,22 +1951,22 @@ const styles = StyleSheet.create({
   tripTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.textPrimary,
   },
   tripDate: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   tripSeats: {
     fontSize: 12,
-    color: '#00b0ff',
+    color: colors.primary,
     marginTop: 4,
     fontWeight: '600',
   },
   emptyText: {
     textAlign: 'center',
-    color: '#718096',
+    color: colors.textSecondary,
     fontSize: 14,
     marginTop: 20,
     fontStyle: 'italic',
@@ -1976,13 +1979,13 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#4a5568',
+    color: colors.textSecondary,
     marginTop: 20,
     marginBottom: 8,
   },
   emptyStateSubtitle: {
     fontSize: 14,
-    color: '#718096',
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
@@ -1990,19 +1993,19 @@ const styles = StyleSheet.create({
   emptyStateCta: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#00b0ff',
+    backgroundColor: colors.primary,
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 100,
   },
   emptyStateCtaText: {
-    color: 'white',
+    color: colors.card,
     fontSize: 16,
     fontWeight: 'bold',
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.card,
   },
   modalContent: {
     padding: 20,
@@ -2018,7 +2021,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.textPrimary,
   },
   textArea: {
     height: 100,
@@ -2040,13 +2043,13 @@ const styles = StyleSheet.create({
     width: 120,
     height: 80,
     borderRadius: 8,
-    backgroundColor: '#f0f2f5',
+    backgroundColor: colors.background,
   },
   removeImageBtn: {
     position: 'absolute',
     top: -8,
     right: -8,
-    backgroundColor: 'white',
+    backgroundColor: colors.card,
     borderRadius: 12,
   },
   addImageBtn: {
@@ -2055,31 +2058,31 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderStyle: 'dashed',
-    borderColor: '#00b0ff',
+    borderColor: colors.primary,
     backgroundColor: '#f0fbff',
     justifyContent: 'center',
     alignItems: 'center',
   },
   addImageText: {
     fontSize: 12,
-    color: '#00b0ff',
+    color: colors.primary,
     marginTop: 4,
     fontWeight: '600',
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#edf2f7',
+    backgroundColor: colors.border,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: colors.border,
   },
   actionButtonText: {
     fontSize: 14,
-    color: '#4a5568',
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   donateButton: {
@@ -2093,7 +2096,7 @@ const styles = StyleSheet.create({
   },
   donateButtonText: {
     fontSize: 14,
-    color: 'white',
+    color: colors.card,
     fontWeight: 'bold',
   },
   aiModalOverlay: {
@@ -2104,7 +2107,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   aiModalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -2124,7 +2127,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   toggleBtnActive: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.card,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -2141,14 +2144,14 @@ const styles = StyleSheet.create({
   },
   
   // Tab Styles
-  tabContainer: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, padding: 4, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
+  tabContainer: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: 12, padding: 4, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
   tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 8 },
   tabBtnActive: { backgroundColor: '#e0f7ff' },
   tabText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
-  tabTextActive: { color: '#00b0ff', fontWeight: 'bold' },
+  tabTextActive: { color: colors.primary, fontWeight: 'bold' },
 
   // Booking Card Styles
-  bookingCard: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  bookingCard: { backgroundColor: colors.card, borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: colors.border, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
   bookingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   bookingIdText: { fontSize: 14, fontWeight: 'bold', color: '#475569', letterSpacing: 1 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100 },
@@ -2212,7 +2215,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: colors.border,
   },
   paymentToggleLabel: {
     fontSize: 15,

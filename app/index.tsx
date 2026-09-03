@@ -8,6 +8,7 @@ import { ActivityIndicator, Animated, FlatList, ImageBackground, RefreshControl,
 import { Skeleton } from '../components/Skeleton';
 import { useAppContext } from '../context/AppContext';
 import { useWishlist } from '../hooks/useWishlist';
+import { useTheme, ThemeColors } from '../context/ThemeContext';
 
 const PRICE_FILTERS = [
   { labelKey: 'explore.filterAll', defaultLabel: 'All', max: Infinity },
@@ -16,13 +17,11 @@ const PRICE_FILTERS = [
   { labelKey: 'explore.filterAbove2000', defaultLabel: 'Above ₹2000', min: 2000, max: Infinity },
 ];
 
-const AnimatedCard = ({ trip, t, isWishlisted, onToggleWishlist }: { trip: any, t: any, isWishlisted: boolean, onToggleWishlist: (id: string) => void }) => {
+const AnimatedCard = ({ trip, t, isWishlisted, onToggleWishlist, colors, styles }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
   const price = trip.packages && trip.packages.length > 0 ? trip.packages[0].price : null;
   const available = trip.batches ? trip.batches.reduce((acc: number, b: any) => acc + (b.totalSeats - b.bookedSeats), 0) : 0;
   
-
-
   return (
     <Link href={`/trip/${trip.id}`} asChild>
       <TouchableOpacity 
@@ -40,7 +39,7 @@ const AnimatedCard = ({ trip, t, isWishlisted, onToggleWishlist }: { trip: any, 
               style={styles.wishlistBtn}
               onPress={(e) => { e.preventDefault(); e.stopPropagation(); onToggleWishlist(trip.id); }}
             >
-              <FontAwesome name={isWishlisted ? "heart" : "heart-o"} size={20} color={isWishlisted ? "#ef4444" : "#fff"} />
+              <FontAwesome name={isWishlisted ? "heart" : "heart-o"} size={20} color={isWishlisted ? colors.danger : "#fff"} />
             </TouchableOpacity>
             <LinearGradient
               colors={['transparent', 'rgba(0,0,0,0.85)']}
@@ -59,12 +58,12 @@ const AnimatedCard = ({ trip, t, isWishlisted, onToggleWishlist }: { trip: any, 
                 )}
                 <Text style={styles.title}>{trip.title}</Text>
                 <Text style={styles.date}>{trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : t('explore.tbd', 'TBD')}</Text>
-                <Text style={styles.vendorName}>{t('explore.by', 'by')} {trip.vendorName}</Text>
+                <Text style={[styles.vendorName, { color: colors.primary }]}>{t('explore.by', 'by')} {trip.vendorName}</Text>
               </View>
               <View style={styles.rightCol}>
                 {price && (
                   <BlurView intensity={60} tint="dark" style={styles.glassPill}>
-                    <Text style={styles.priceBadgeText}>₹{price}</Text>
+                    <Text style={[styles.priceBadgeText, { color: colors.primary }]}>₹{price}</Text>
                   </BlurView>
                 )}
                 <BlurView intensity={40} tint="light" style={styles.glassPillSecondary}>
@@ -82,6 +81,8 @@ const AnimatedCard = ({ trip, t, isWishlisted, onToggleWishlist }: { trip: any, 
 export default function HomeScreen() {
   const { trips, loading, fetchMoreTrips, hasMoreTrips, refreshTrips } = useAppContext();
   const { wishlistedIds, toggleWishlist } = useWishlist();
+  const { colors, isDark } = useTheme();
+  const styles = getStyles(colors);
   const [refreshing, setRefreshing] = useState(false);
   const { t } = useTranslation();
 
@@ -116,10 +117,10 @@ export default function HomeScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <View style={{ height: 250, backgroundColor: '#e2e8f0' }} />
+        <View style={{ height: 250, backgroundColor: colors.border }} />
         <ScrollView style={{ paddingHorizontal: 16, marginTop: -40 }}>
           {[1, 2, 3].map(i => (
-            <View key={i} style={[styles.cardContainer, { padding: 15, backgroundColor: '#fff', borderRadius: 20 }]}>
+            <View key={i} style={[styles.cardContainer, { padding: 15, backgroundColor: colors.card, borderRadius: 20 }]}>
               <Skeleton height={150} borderRadius={10} style={{ marginBottom: 10 }} />
               <Skeleton height={20} width="70%" style={{ marginBottom: 5 }} />
               <Skeleton height={16} width="40%" />
@@ -138,7 +139,7 @@ export default function HomeScreen() {
         style={styles.heroSection}
       >
         <LinearGradient
-          colors={['rgba(0,0,0,0.2)', 'rgba(240,242,245,1)']}
+          colors={['rgba(0,0,0,0.4)', isDark ? colors.background : 'rgba(240,242,245,1)']}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.heroContent}>
@@ -154,16 +155,16 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         {/* Glassmorphic Search Bar */}
-        <BlurView intensity={80} tint="default" style={styles.searchBlurContainer}>
-          <FontAwesome name="search" size={18} color="#4a5568" style={styles.searchIcon} />
+        <BlurView intensity={80} tint={isDark ? 'dark' : 'default'} style={styles.searchBlurContainer}>
+          <FontAwesome name="search" size={18} color={colors.textSecondary} style={styles.searchIcon} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.textPrimary }]}
             placeholder={t('explore.searchPlaceholder')}
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCapitalize="none"
             clearButtonMode="while-editing"
-            placeholderTextColor="#718096"
+            placeholderTextColor={colors.textSecondary}
           />
         </BlurView>
       </ImageBackground>
@@ -172,14 +173,14 @@ export default function HomeScreen() {
       <View style={styles.filterWrapper}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.filterRow, { marginBottom: 10 }]} contentContainerStyle={{ paddingHorizontal: 16 }}>
           <TouchableOpacity onPress={() => setActiveCategory(null)}>
-            <View style={[styles.filterChip, !activeCategory && { backgroundColor: '#f3e8ff', borderColor: '#d8b4fe', borderWidth: 1 }]}>
-              <Text style={[styles.filterChipText, !activeCategory && { color: '#7e22ce', fontWeight: 'bold' }]}>All Trips</Text>
+            <View style={[styles.filterChip, !activeCategory && { backgroundColor: isDark ? '#3b215e' : '#f3e8ff', borderColor: isDark ? '#6b21a8' : '#d8b4fe', borderWidth: 1 }]}>
+              <Text style={[styles.filterChipText, !activeCategory && { color: isDark ? '#d8b4fe' : '#7e22ce', fontWeight: 'bold' }]}>All Trips</Text>
             </View>
           </TouchableOpacity>
           {['Trekking', 'Camping', 'Beach', 'Road Trip', 'Pilgrimage', 'International'].map((cat) => (
             <TouchableOpacity key={cat} onPress={() => setActiveCategory(cat)}>
-              <View style={[styles.filterChip, activeCategory === cat && { backgroundColor: '#f3e8ff', borderColor: '#d8b4fe', borderWidth: 1 }]}>
-                <Text style={[styles.filterChipText, activeCategory === cat && { color: '#7e22ce', fontWeight: 'bold' }]}>{cat}</Text>
+              <View style={[styles.filterChip, activeCategory === cat && { backgroundColor: isDark ? '#3b215e' : '#f3e8ff', borderColor: isDark ? '#6b21a8' : '#d8b4fe', borderWidth: 1 }]}>
+                <Text style={[styles.filterChipText, activeCategory === cat && { color: isDark ? '#d8b4fe' : '#7e22ce', fontWeight: 'bold' }]}>{cat}</Text>
               </View>
             </TouchableOpacity>
           ))}
@@ -187,14 +188,14 @@ export default function HomeScreen() {
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.filterRow, { marginBottom: 10 }]} contentContainerStyle={{ paddingHorizontal: 16 }}>
           <TouchableOpacity onPress={() => setActiveDestination(null)}>
-            <View style={[styles.filterChip, !activeDestination && { backgroundColor: '#e0f2fe', borderColor: '#7dd3fc', borderWidth: 1 }]}>
-              <Text style={[styles.filterChipText, !activeDestination && { color: '#0369a1', fontWeight: 'bold' }]}>Anywhere</Text>
+            <View style={[styles.filterChip, !activeDestination && { backgroundColor: isDark ? '#083344' : '#e0f2fe', borderColor: isDark ? '#0c4a6e' : '#7dd3fc', borderWidth: 1 }]}>
+              <Text style={[styles.filterChipText, !activeDestination && { color: isDark ? '#7dd3fc' : '#0369a1', fontWeight: 'bold' }]}>Anywhere</Text>
             </View>
           </TouchableOpacity>
           {['Pune', 'Mumbai', 'Bangalore'].map((dest) => (
             <TouchableOpacity key={dest} onPress={() => setActiveDestination(dest)}>
-              <View style={[styles.filterChip, activeDestination === dest && { backgroundColor: '#e0f2fe', borderColor: '#7dd3fc', borderWidth: 1 }]}>
-                <Text style={[styles.filterChipText, activeDestination === dest && { color: '#0369a1', fontWeight: 'bold' }]}>{dest}</Text>
+              <View style={[styles.filterChip, activeDestination === dest && { backgroundColor: isDark ? '#083344' : '#e0f2fe', borderColor: isDark ? '#0c4a6e' : '#7dd3fc', borderWidth: 1 }]}>
+                <Text style={[styles.filterChipText, activeDestination === dest && { color: isDark ? '#7dd3fc' : '#0369a1', fontWeight: 'bold' }]}>{dest}</Text>
               </View>
             </TouchableOpacity>
           ))}
@@ -207,13 +208,9 @@ export default function HomeScreen() {
               onPress={() => setActiveFilter(idx)}
             >
               {activeFilter === idx ? (
-                <LinearGradient
-                  colors={['#00b0ff', '#007bb5']}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                  style={[styles.filterChip, { borderWidth: 0 }]}
-                >
-                  <Text style={styles.filterChipTextActive}>{t(f.labelKey, f.defaultLabel)}</Text>
-                </LinearGradient>
+                <View style={[styles.filterChip, { backgroundColor: colors.primary, borderWidth: 0 }]}>
+                  <Text style={[styles.filterChipTextActive, { color: isDark ? '#000' : '#fff' }]}>{t(f.labelKey, f.defaultLabel)}</Text>
+                </View>
               ) : (
                 <View style={styles.filterChip}>
                   <Text style={styles.filterChipText}>{t(f.labelKey, f.defaultLabel)}</Text>
@@ -229,7 +226,7 @@ export default function HomeScreen() {
         data={filteredTrips}
         keyExtractor={(item) => item.id}
         contentContainerStyle={filteredTrips.length === 0 ? styles.emptyContainer : styles.listContainer}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#00b0ff" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
         onEndReached={() => {
           if (fetchMoreTrips && hasMoreTrips) fetchMoreTrips();
         }}
@@ -237,14 +234,14 @@ export default function HomeScreen() {
         ListFooterComponent={
           filteredTrips.length > 0 ? (
             <View style={{ padding: 20, alignItems: 'center' }}>
-              {hasMoreTrips ? <ActivityIndicator size="small" color="#00b0ff" /> : <Text style={{ color: '#a0aec0' }}>{t('explore.endOfList', "You've reached the end")}</Text>}
+              {hasMoreTrips ? <ActivityIndicator size="small" color={colors.primary} /> : <Text style={{ color: colors.textSecondary }}>{t('explore.endOfList', "You've reached the end")}</Text>}
             </View>
           ) : null
         }
-        renderItem={({ item }) => <AnimatedCard trip={item} t={t} isWishlisted={wishlistedIds.includes(item.id)} onToggleWishlist={toggleWishlist} />}
+        renderItem={({ item }) => <AnimatedCard trip={item} t={t} isWishlisted={wishlistedIds.includes(item.id)} onToggleWishlist={toggleWishlist} colors={colors} styles={styles} />}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <FontAwesome name="map-o" size={64} color="#cbd5e0" />
+            <FontAwesome name="map-o" size={64} color={colors.border} />
             <Text style={styles.emptyTitle}>{t('explore.noTrips', 'No Trips Found')}</Text>
             <Text style={styles.emptySubtitle}>{t('explore.noTripsSub', 'Try adjusting your search or filters to discover new adventures.')}</Text>
           </View>
@@ -254,8 +251,8 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0f2f5' },
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   heroSection: {
     height: 280,
     justifyContent: 'flex-end',
@@ -268,15 +265,15 @@ const styles = StyleSheet.create({
   heroTitle: {
     fontSize: 32,
     fontWeight: '900',
-    color: '#1a202c',
+    color: '#ffffff',
     marginBottom: 8,
-    textShadowColor: 'rgba(255,255,255,0.8)',
+    textShadowColor: 'rgba(0,0,0,0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 10,
   },
   heroSubtitle: {
     fontSize: 15,
-    color: '#4a5568',
+    color: '#e2e8f0',
     fontWeight: '500',
     lineHeight: 22,
   },
@@ -284,10 +281,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', 
     marginHorizontal: 16, borderRadius: 16, paddingHorizontal: 16,
     paddingVertical: 14, overflow: 'hidden',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    borderWidth: 1, borderColor: colors.border,
   },
   searchIcon: { marginRight: 12 },
-  searchInput: { flex: 1, fontSize: 16, color: '#1a202c', fontWeight: '500' },
+  searchInput: { flex: 1, fontSize: 16, color: colors.textPrimary, fontWeight: '500' },
   filterWrapper: {
     marginTop: 10,
     marginBottom: 5,
@@ -295,13 +292,13 @@ const styles = StyleSheet.create({
   filterRow: { maxHeight: 50 },
   filterChip: {
     paddingHorizontal: 18, paddingVertical: 10, borderRadius: 25, 
-    backgroundColor: '#ffffff', marginRight: 10, 
+    backgroundColor: colors.card, marginRight: 10, 
     justifyContent: 'center', alignItems: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05, shadowRadius: 3, elevation: 2,
-    borderWidth: 1, borderColor: '#e2e8f0',
+    borderWidth: 1, borderColor: colors.border,
   },
-  filterChipText: { fontSize: 13, fontWeight: '600', color: '#4a5568' },
+  filterChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   filterChipTextActive: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
   listContainer: { padding: 16, paddingBottom: 40 },
   emptyContainer: { flex: 1, padding: 16 },
@@ -333,7 +330,7 @@ const styles = StyleSheet.create({
   date: {
     color: '#e2e8f0', fontSize: 14, marginTop: 4, fontWeight: '600',
   },
-  vendorName: { color: '#90cdf4', fontSize: 13, marginTop: 4, fontWeight: '700' },
+  vendorName: { color: colors.primary, fontSize: 13, marginTop: 4, fontWeight: '700' },
   rightCol: { alignItems: 'flex-end', gap: 8 },
   glassPill: { 
     overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
@@ -343,10 +340,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)'
   },
-  priceBadgeText: { color: '#fff', fontWeight: '900', fontSize: 16 },
-  pillText: { color: '#1a202c', fontWeight: '800', fontSize: 12 },
+  priceBadgeText: { color: colors.primary, fontWeight: '900', fontSize: 16 },
+  pillText: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
 
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
-  emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#4a5568', marginTop: 20 },
-  emptySubtitle: { fontSize: 15, color: '#8a94a6', textAlign: 'center', marginTop: 8, paddingHorizontal: 30 },
+  emptyTitle: { fontSize: 20, fontWeight: 'bold', color: colors.textPrimary, marginTop: 20 },
+  emptySubtitle: { fontSize: 15, color: colors.textSecondary, textAlign: 'center', marginTop: 8, paddingHorizontal: 30 },
 });

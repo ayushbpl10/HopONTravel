@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, router } from 'expo-router';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
+import { useTheme, ThemeColors } from '../context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { db } from '../config/firebase';
@@ -11,6 +12,8 @@ import { Booking } from '../data/trips';
 
 
 export default function MyBookingsScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = getStyles(colors);
   const { userProfile } = useAppContext();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +57,7 @@ export default function MyBookingsScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#00b0ff" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -62,7 +65,7 @@ export default function MyBookingsScreen() {
   if (!userProfile) {
     return (
       <View style={styles.center}>
-        <FontAwesome name="lock" size={50} color="#cbd5e0" style={{ marginBottom: 20 }} />
+        <FontAwesome name="lock" size={50} color={colors.border} style={{ marginBottom: 20 }} />
         <Text style={styles.emptyTitle}>{t('bookings.pleaseLogin', 'Please log in to view your bookings.')}</Text>
         <TouchableOpacity style={styles.loginBtn} onPress={() => router.push('/vendor-dashboard' as any)}>
           <Text style={styles.loginBtnText}>{t('bookings.goToProfile', 'Go to Profile & Login')}</Text>
@@ -92,7 +95,7 @@ export default function MyBookingsScreen() {
           )}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <FontAwesome name="ticket" size={50} color="#e2e8f0" style={{ marginBottom: 20 }} />
+              <FontAwesome name="ticket" size={50} color={colors.border} style={{ marginBottom: 20 }} />
               <Text style={styles.emptyTitle}>{t('bookings.noBookings', 'No bookings yet.')}</Text>
               <Text style={styles.emptySubtitle}>{t('bookings.emptySubtitle', 'When you book a trip, it will appear here.')}</Text>
             </View>
@@ -103,19 +106,19 @@ export default function MyBookingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0f4f8' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f4f8' },
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
   listContainer: { padding: 16 },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  card: { backgroundColor: colors.card, borderRadius: 12, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  statusBadge: { backgroundColor: '#dcfce7', color: '#166534', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100, fontSize: 12, fontWeight: '700' },
-  date: { fontSize: 12, color: '#a0aec0' },
-  tripTitle: { fontSize: 18, fontWeight: '700', color: '#2d3748', marginBottom: 8 },
-  details: { fontSize: 14, color: '#718096', marginBottom: 4 },
-  emptyTitle: { fontSize: 20, fontWeight: 'bold', color: '#4a5568', marginTop: 20 },
+  statusBadge: { backgroundColor: colors.success, color: '#166534', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100, fontSize: 12, fontWeight: '700' },
+  date: { fontSize: 12, color: colors.textSecondary },
+  tripTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
+  details: { fontSize: 14, color: colors.textSecondary, marginBottom: 4 },
+  emptyTitle: { fontSize: 20, fontWeight: 'bold', color: colors.textSecondary, marginTop: 20 },
   emptySubtitle: { fontSize: 15, color: '#8a94a6', textAlign: 'center', marginTop: 8, paddingHorizontal: 30 },
-  loginBtn: { marginTop: 20, backgroundColor: '#00b0ff', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 100 },
-  loginBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 }
+  loginBtn: { marginTop: 20, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 100 },
+  loginBtnText: { color: colors.card, fontWeight: '700', fontSize: 16 }
 });

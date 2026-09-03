@@ -4,20 +4,21 @@ import { useState } from 'react';
 import 'react-native-reanimated';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { AppProvider, useAppContext } from '../context/AppContext';
+import { ThemeProvider, useTheme, ThemeColors } from '../context/ThemeContext';
 
-// Optional: Suppress default error screen if needed in development
-// import { ErrorUtils } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { changeLanguage } from '../config/i18n';
-import '../utils/backgroundLocation'; // Register background task
+import '../utils/backgroundLocation';
 import { OfflineIndicator } from '../components/OfflineIndicator';
 
 function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: any) {
   const { userProfile, loginWithGoogle } = useAppContext();
+  const { colors, isDark } = useTheme();
   const router = useRouter();
   
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const styles = getStyles(colors);
 
   const handleTravellerPress = () => {
     if (userProfile?.role === 'traveller') {
@@ -41,6 +42,8 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
 
   return (
     <>
+      <StatusBar style={isDark ? "light" : "dark"} />
+      
       {/* Language Selection Modal */}
       <Modal visible={showLangModal} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowLangModal(false)}>
@@ -65,22 +68,22 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
       <Modal visible={showLoginModal} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowLoginModal(false)}>
           <View style={[styles.modalContent, { width: 300, padding: 25 }]}>
-            <Text style={styles.modalTitle}>Welcome to HopON</Text>
-            <Text style={{ textAlign: 'center', marginBottom: 20, color: '#666' }}>Please select how you want to continue.</Text>
+            <Text style={styles.modalTitle}>Welcome to Ab Toh Ghoom Le</Text>
+            <Text style={{ textAlign: 'center', marginBottom: 20, color: colors.textSecondary }}>Please select how you want to continue.</Text>
 
             <TouchableOpacity 
-              style={[styles.loginRoleBtn, { backgroundColor: '#00b0ff' }]} 
+              style={[styles.loginRoleBtn, { backgroundColor: colors.primary }]} 
               onPress={async () => {
                 setShowLoginModal(false);
                 await loginWithGoogle('traveller');
               }}
             >
-              <FontAwesome name="user" size={20} color="white" style={{ marginRight: 10 }} />
-              <Text style={styles.loginRoleBtnText}>Continue as Traveller</Text>
+              <FontAwesome name="user" size={20} color={isDark ? "#000" : "#fff"} style={{ marginRight: 10 }} />
+              <Text style={[styles.loginRoleBtnText, { color: isDark ? "#000" : "#fff" }]}>Continue as Traveller</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={[styles.loginRoleBtn, { backgroundColor: '#4a5568', marginTop: 15 }]} 
+              style={[styles.loginRoleBtn, { backgroundColor: isDark ? '#333' : '#4a5568', marginTop: 15 }]} 
               onPress={async () => {
                 setShowLoginModal(false);
                 await loginWithGoogle('vendor');
@@ -88,7 +91,7 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
               }}
             >
               <FontAwesome name="briefcase" size={20} color="white" style={{ marginRight: 10 }} />
-              <Text style={styles.loginRoleBtnText}>Continue as Vendor</Text>
+              <Text style={[styles.loginRoleBtnText, { color: '#fff' }]}>Continue as Vendor</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -96,9 +99,9 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
 
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: '#f8f9fa' },
+          headerStyle: { backgroundColor: colors.card },
           headerTitleStyle: { fontWeight: 'bold' },
-          headerTintColor: '#333',
+          headerTintColor: colors.textPrimary,
         }}
       >
         <Stack.Screen 
@@ -108,20 +111,20 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
             headerLeft: undefined,
             headerRight: () => (
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity style={{ marginRight: 15 }} onPress={() => router.push('/settings')}>
+                  <FontAwesome name="cog" size={24} color={colors.primary} />
+                </TouchableOpacity>
                 <TouchableOpacity 
                   style={{ marginRight: 15 }}
                   onPress={() => setShowLangModal(true)}
                 >
-                  <FontAwesome name="language" size={24} color="#00b0ff" />
+                  <FontAwesome name="language" size={24} color={colors.primary} />
                 </TouchableOpacity>
-                {/* Traveller Icon */}
                 <TouchableOpacity style={{ marginRight: 15 }} onPress={handleTravellerPress}>
-                  <FontAwesome name="user" size={24} color="#00b0ff" />
+                  <FontAwesome name="user" size={24} color={colors.primary} />
                 </TouchableOpacity>
-
-                {/* Vendor Icon */}
                 <TouchableOpacity style={{ marginRight: 10 }} onPress={handleVendorPress}>
-                  <FontAwesome name="briefcase" size={24} color="#00b0ff" />
+                  <FontAwesome name="briefcase" size={24} color={colors.primary} />
                 </TouchableOpacity>
               </View>
             )
@@ -135,6 +138,8 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
         <Stack.Screen name="booking-confirmation" options={{ title: 'Booking Confirmation' }} />
         <Stack.Screen name="booking-status" options={{ title: 'Booking Status' }} />
         <Stack.Screen name="my-bookings" options={{ title: 'My Bookings' }} />
+        <Stack.Screen name="wishlist" options={{ title: 'Wishlist' }} />
+        <Stack.Screen name="settings" options={{ title: 'Settings', presentation: 'modal' }} />
       </Stack>
     </>
   );
@@ -150,45 +155,48 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <AppProvider>
-        <StatusBar style="auto" />
-        <OfflineIndicator />
-        <RootLayoutNav showLangModal={showLangModal} setShowLangModal={setShowLangModal} handleLangChange={handleLangChange} />
-      </AppProvider>
+      <ThemeProvider>
+        <AppProvider>
+          <OfflineIndicator />
+          <RootLayoutNav showLangModal={showLangModal} setShowLangModal={setShowLangModal} handleLangChange={handleLangChange} />
+        </AppProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center'
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: colors.card,
     padding: 20,
     borderRadius: 16,
     width: 300,
-    alignItems: 'center'
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 15,
-    color: '#333'
+    color: colors.textPrimary
   },
   langOption: {
     width: '100%',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#edf2f7',
+    borderBottomColor: colors.border,
     alignItems: 'center'
   },
   langText: {
     fontSize: 16,
-    color: '#00b0ff',
+    color: colors.primary,
     fontWeight: '500'
   },
   loginRoleBtn: {
@@ -200,7 +208,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   loginRoleBtnText: {
-    color: 'white',
     fontSize: 16,
     fontWeight: 'bold'
   }

@@ -5,6 +5,7 @@ import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
 import { getDistance } from 'geolib';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import { Alert, Dimensions, Linking, Modal, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import TripMap from '../../components/TripMap';
@@ -16,7 +17,7 @@ import { useWishlist } from '../../hooks/useWishlist';
 
 const { width } = Dimensions.get('window');
 
-const CountdownTimer = ({ dateDuration }: { dateDuration: string }) => {
+const CountdownTimer = ({ dateDuration, styles }: { dateDuration: string, styles: any }) => {
   const [timeLeft, setTimeLeft] = useState<{ days: number, hours: number, minutes: number } | null>(null);
 
   useEffect(() => {
@@ -85,6 +86,8 @@ const CountdownTimer = ({ dateDuration }: { dateDuration: string }) => {
 };
 
 export default function TripDetailScreen() {
+  const { colors, isDark } = useTheme();
+  const styles = getStyles(colors);
   const { id } = useLocalSearchParams();
   const { trips, userProfile, bookTrip } = useAppContext();
   const trip = trips.find((t) => t.id === id);
@@ -314,8 +317,8 @@ export default function TripDetailScreen() {
               <Image key={index} source={{ uri: img }} style={[styles.heroImage, { width }]} />
             ))
           ) : (
-            <View style={[styles.heroImage, { width, backgroundColor: '#cbd5e0', justifyContent: 'center', alignItems: 'center' }]}>
-              <FontAwesome name="image" size={50} color="#a0aec0" />
+            <View style={[styles.heroImage, { width, backgroundColor: colors.border, justifyContent: 'center', alignItems: 'center' }]}>
+              <FontAwesome name="image" size={50} color={colors.textSecondary} />
             </View>
           )}
         </ScrollView>
@@ -357,7 +360,7 @@ export default function TripDetailScreen() {
         </View>
 
         {trip.batches && trip.batches.length > 0 && trip.tripStatus !== 'started' && trip.tripStatus !== 'completed' && (
-          <CountdownTimer dateDuration={trip.batches[0].dateDuration} />
+          <CountdownTimer dateDuration={trip.batches[0].dateDuration} styles={styles} />
         )}
 
         {/* Live Trip Section */}
@@ -407,7 +410,7 @@ export default function TripDetailScreen() {
               <View style={styles.trackingPill}>
                 <Text style={styles.trackingPillText}>✓ You are sharing your location</Text>
                 {etaMins > 0 && (
-                  <Text style={{color: 'white', marginTop: 4, fontWeight: 'bold', textAlign: 'center'}}>
+                  <Text style={{color: colors.card, marginTop: 4, fontWeight: 'bold', textAlign: 'center'}}>
                     Bus is ~{distanceKm.toFixed(1)} km away. ETA: {etaMins} mins
                   </Text>
                 )}
@@ -423,7 +426,7 @@ export default function TripDetailScreen() {
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>Available</Text>
-            <Text style={[styles.statValue, { color: '#00b0ff' }]}>{trip.batches ? trip.batches.reduce((acc, b) => acc + (b.totalSeats - b.bookedSeats), 0) : 0}</Text>
+            <Text style={[styles.statValue, { color: colors.primary }]}>{trip.batches ? trip.batches.reduce((acc, b) => acc + (b.totalSeats - b.bookedSeats), 0) : 0}</Text>
           </View>
         </View>
 
@@ -449,7 +452,7 @@ export default function TripDetailScreen() {
                 <Text style={styles.sectionTitle}>{t('tripDetails.exclusions', 'Exclusions')}</Text>
                 {trip.exclusions.map((item, i) => (
                   <View key={i} style={styles.listItem}>
-                    <FontAwesome name="times-circle" size={16} color="#ef4444" style={styles.listIcon} />
+                    <FontAwesome name="times-circle" size={16} color={colors.danger} style={styles.listIcon} />
                     <Text style={styles.listText}>{item}</Text>
                   </View>
                 ))}
@@ -469,7 +472,7 @@ export default function TripDetailScreen() {
                 <View key={i} style={styles.itineraryCard}>
                   <TouchableOpacity style={styles.itineraryHeader} onPress={() => setExpandedDay(isExpanded ? null : i)}>
                     <Text style={styles.itineraryDay}>Day {dayItem.day}: {dayItem.title}</Text>
-                    <FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={14} color="#718096" />
+                    <FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={14} color={colors.textSecondary} />
                   </TouchableOpacity>
                   {isExpanded && (
                     <View style={styles.itineraryContent}>
@@ -493,7 +496,7 @@ export default function TripDetailScreen() {
                 <View key={i} style={styles.itineraryCard}>
                   <TouchableOpacity style={styles.itineraryHeader} onPress={() => setExpandedDay(isExpanded ? null : i)}>
                     <Text style={styles.itineraryDay}>{dayTitle}</Text>
-                    <FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={14} color="#718096" />
+                    <FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={14} color={colors.textSecondary} />
                   </TouchableOpacity>
                   {isExpanded && (
                     <View style={styles.itineraryContent}>
@@ -518,7 +521,7 @@ export default function TripDetailScreen() {
                 </View>
                 {p.mapLink && (
                   <TouchableOpacity onPress={() => Linking.openURL(p.mapLink!)}>
-                    <FontAwesome name="external-link" size={16} color="#00b0ff" />
+                    <FontAwesome name="external-link" size={16} color={colors.primary} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -527,17 +530,17 @@ export default function TripDetailScreen() {
         )}
 
         <View style={styles.vendorCard}>
-          <FontAwesome name="user-circle" size={40} color="#cbd5e0" style={styles.vendorIcon} />
+          <FontAwesome name="user-circle" size={40} color={colors.border} style={styles.vendorIcon} />
           <View style={{ flex: 1 }}>
             <Text style={styles.vendorLabel}>Organized by</Text>
             <Text style={styles.vendorName}>{trip.vendorName}</Text>
             <View style={styles.vendorInfoRow}>
-              <FontAwesome name="whatsapp" size={14} color="#718096" />
+              <FontAwesome name="whatsapp" size={14} color={colors.textSecondary} />
               <Text style={styles.vendorInfoText}>{trip.vendorWhatsApp}</Text>
             </View>
           </View>
           <TouchableOpacity style={styles.shareButton} onPress={handleShareTrip}>
-            <FontAwesome name="share-alt" size={18} color="#00b0ff" />
+            <FontAwesome name="share-alt" size={18} color={colors.primary} />
           </TouchableOpacity>
         </View>
 
@@ -597,7 +600,7 @@ export default function TripDetailScreen() {
                     }}
                   >
                     <View style={[styles.addonCheck, isSelected && styles.addonCheckActive]}>
-                      {isSelected && <FontAwesome name="check" size={12} color="#fff" />}
+                      {isSelected && <FontAwesome name="check" size={12} color={colors.card} />}
                     </View>
                     <Text style={styles.addonName}>{addon.name}</Text>
                     <Text style={styles.addonPrice}>+₹{addon.price}</Text>
@@ -611,11 +614,11 @@ export default function TripDetailScreen() {
             <Text style={styles.selectionLabel}>Number of Seats</Text>
             <View style={styles.stepper}>
               <TouchableOpacity style={styles.stepBtn} onPress={() => setSeats(Math.max(1, seats - 1))}>
-                <FontAwesome name="minus" size={16} color="#00b0ff" />
+                <FontAwesome name="minus" size={16} color={colors.primary} />
               </TouchableOpacity>
               <Text style={styles.stepValue}>{seats}</Text>
               <TouchableOpacity style={styles.stepBtn} onPress={() => setSeats(seats + 1)}>
-                <FontAwesome name="plus" size={16} color="#00b0ff" />
+                <FontAwesome name="plus" size={16} color={colors.primary} />
               </TouchableOpacity>
             </View>
           </View>
@@ -625,7 +628,7 @@ export default function TripDetailScreen() {
             <Text style={styles.selectionLabel}>Promo Code</Text>
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <TextInput
-                style={{ flex: 1, borderWidth: 1, borderColor: '#cbd5e0', borderRadius: 8, paddingHorizontal: 12, height: 48, backgroundColor: '#fff', textTransform: 'uppercase' }}
+                style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 12, height: 48, backgroundColor: colors.card, textTransform: 'uppercase' }}
                 placeholder="Enter Code"
                 value={discountCode}
                 onChangeText={setDiscountCode}
@@ -636,7 +639,7 @@ export default function TripDetailScreen() {
                 onPress={handleApplyDiscount}
                 disabled={isApplyingDiscount || discountPercent > 0}
               >
-                <Text style={{ color: '#fff', fontWeight: 'bold' }}>{discountPercent > 0 ? 'Applied' : (isApplyingDiscount ? '...' : 'Apply')}</Text>
+                <Text style={{ color: colors.card, fontWeight: 'bold' }}>{discountPercent > 0 ? 'Applied' : (isApplyingDiscount ? '...' : 'Apply')}</Text>
               </TouchableOpacity>
             </View>
             {discountPercent > 0 && (
@@ -655,7 +658,7 @@ export default function TripDetailScreen() {
         <View style={styles.buttonRow}>
           <TouchableOpacity style={[styles.bookButton, styles.proceedButton]} onPress={handleProceedToCheckout}>
             <Text style={styles.bookButtonText}>Proceed to Traveller Details</Text>
-            <FontAwesome name="arrow-right" size={16} color="white" style={{marginLeft: 8, marginTop: 2}} />
+            <FontAwesome name="arrow-right" size={16} color={colors.card} style={{marginLeft: 8, marginTop: 2}} />
           </TouchableOpacity>
         </View>
       </View>
@@ -674,10 +677,10 @@ export default function TripDetailScreen() {
             />
             <View style={styles.modalBtns}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsJoinModalVisible(false)}>
-                <Text style={{ color: '#666' }}>Cancel</Text>
+                <Text style={{ color: colors.textSecondary }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.confirmBtn} onPress={handleJoinTrip}>
-                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Join</Text>
+                <Text style={{ color: colors.card, fontWeight: 'bold' }}>Join</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -688,21 +691,21 @@ export default function TripDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#ffffff' },
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.card },
   contentContainer: { paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   heroScroll: { height: 300 },
   heroImage: { height: 300, resizeMode: 'cover' },
-  detailsContainer: { padding: 24, borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: '#ffffff', marginTop: -30, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  detailsContainer: { padding: 24, borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: colors.card, marginTop: -30, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
   liveBanner: { backgroundColor: '#fef2f2', padding: 8, borderRadius: 8, marginBottom: 15, alignItems: 'center', borderWidth: 1, borderColor: '#fca5a5' },
-  liveBannerText: { color: '#ef4444', fontWeight: 'bold' },
+  liveBannerText: { color: colors.danger, fontWeight: 'bold' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
   titleContainer: { flex: 1, marginRight: 10 },
   title: { fontSize: 28, fontWeight: '800', color: '#1a1a1a' },
-  date: { fontSize: 14, color: '#718096', marginTop: 6, fontWeight: '500' },
-  price: { fontSize: 24, fontWeight: 'bold', color: '#00b0ff' },
-  shareIconText: { marginLeft: 8, fontSize: 16, fontWeight: 'bold', color: '#1a202c' },
+  date: { fontSize: 14, color: colors.textSecondary, marginTop: 6, fontWeight: '500' },
+  price: { fontSize: 24, fontWeight: 'bold', color: colors.primary },
+  shareIconText: { marginLeft: 8, fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
   wishlistBtn: {
     position: 'absolute', top: 16, right: 16, zIndex: 10,
     backgroundColor: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 25
@@ -710,52 +713,52 @@ const styles = StyleSheet.create({
   countdownContainer: { backgroundColor: '#f0f9ff', padding: 12, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: '#bae6fd', alignItems: 'center' },
   countdownTitle: { color: '#0369a1', fontWeight: 'bold', marginBottom: 8, fontSize: 14 },
   countdownRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  countdownBox: { backgroundColor: '#fff', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', minWidth: 60, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 },
+  countdownBox: { backgroundColor: colors.card, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', minWidth: 60, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 },
   countdownNum: { fontSize: 18, fontWeight: 'bold', color: '#0f172a' },
   countdownLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', marginTop: 2, fontWeight: '600' },
   countdownSep: { fontSize: 20, fontWeight: 'bold', color: '#bae6fd', marginBottom: 12 },
   
-  liveSection: { backgroundColor: '#f8f9fa', padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#e2e8f0' },
+  liveSection: { backgroundColor: colors.background, padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: colors.border },
   vehicleImage: { width: '100%', height: 150, borderRadius: 8, marginBottom: 12 },
   crewInfoBox: { marginBottom: 16 },
-  crewLabel: { fontSize: 14, color: '#4a5568', marginBottom: 4 },
+  crewLabel: { fontSize: 14, color: colors.textSecondary, marginBottom: 4 },
   crewValue: { fontWeight: 'bold', color: '#1a1a1a' },
   mapWrapper: { height: 200, borderRadius: 8, overflow: 'hidden', marginBottom: 16 },
   map: { flex: 1 },
-  mapPlaceholder: { flex: 1, backgroundColor: '#e2e8f0', justifyContent: 'center', alignItems: 'center' },
+  mapPlaceholder: { flex: 1, backgroundColor: colors.border, justifyContent: 'center', alignItems: 'center' },
   joinBtn: { backgroundColor: '#4ade80', padding: 14, borderRadius: 8, alignItems: 'center' },
-  joinBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
-  trackingPill: { backgroundColor: '#dcfce7', padding: 12, borderRadius: 8, alignItems: 'center' },
+  joinBtnText: { color: colors.card, fontWeight: 'bold', fontSize: 16 },
+  trackingPill: { backgroundColor: colors.success, padding: 12, borderRadius: 8, alignItems: 'center' },
   trackingPillText: { color: '#166534', fontWeight: 'bold' },
 
   statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
   statBox: { flex: 1, backgroundColor: '#f5f7fa', padding: 16, borderRadius: 12, alignItems: 'center', marginHorizontal: 4 },
   statLabel: { fontSize: 12, color: '#8a94a6', textTransform: 'uppercase', fontWeight: '600', marginBottom: 4 },
-  statValue: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  statValue: { fontSize: 20, fontWeight: 'bold', color: colors.textPrimary },
   sectionTitle: { fontSize: 20, fontWeight: '700', color: '#1a1a1a', marginBottom: 12 },
-  description: { fontSize: 16, lineHeight: 24, color: '#4a5568', marginBottom: 24 },
+  description: { fontSize: 16, lineHeight: 24, color: colors.textSecondary, marginBottom: 24 },
   
   pickupSection: { marginBottom: 24 },
-  pickupItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8f9fa', padding: 12, borderRadius: 8, marginBottom: 8 },
-  pickupLocation: { fontSize: 16, fontWeight: '600', color: '#2d3748' },
-  pickupTime: { fontSize: 14, color: '#718096' },
+  pickupItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, padding: 12, borderRadius: 8, marginBottom: 8 },
+  pickupLocation: { fontSize: 16, fontWeight: '600', color: colors.textPrimary },
+  pickupTime: { fontSize: 14, color: colors.textSecondary },
 
-  vendorCard: { backgroundColor: '#f8f9fa', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 30, flexDirection: 'row', alignItems: 'center' },
+  vendorCard: { backgroundColor: colors.background, padding: 16, borderRadius: 12, borderWidth: 1, borderColor: colors.border, marginBottom: 30, flexDirection: 'row', alignItems: 'center' },
   vendorIcon: { marginRight: 15 },
-  vendorLabel: { fontSize: 12, color: '#718096', marginBottom: 2 },
-  vendorName: { fontSize: 18, fontWeight: '700', color: '#2d3748', marginBottom: 4 },
+  vendorLabel: { fontSize: 12, color: colors.textSecondary, marginBottom: 2 },
+  vendorName: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
   vendorInfoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  vendorInfoText: { fontSize: 12, color: '#718096', marginLeft: 6 },
+  vendorInfoText: { fontSize: 12, color: colors.textSecondary, marginLeft: 6 },
   shareButton: { padding: 12, backgroundColor: '#e0f7ff', borderRadius: 100 },
   buttonRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   bookButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 100, elevation: 4 },
-  bookButtonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
+  bookButtonText: { color: colors.card, fontSize: 16, fontWeight: 'bold' },
   proceedButton: { backgroundColor: '#0f172a', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: 'white', padding: 24, borderRadius: 16 },
+  modalContent: { backgroundColor: colors.card, padding: 24, borderRadius: 16 },
   modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
-  modalDesc: { color: '#666', marginBottom: 16 },
+  modalDesc: { color: colors.textSecondary, marginBottom: 16 },
   modalInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, marginBottom: 20, fontSize: 16 },
   modalBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
   cancelBtn: { padding: 12 },
@@ -767,36 +770,36 @@ const styles = StyleSheet.create({
   excList: { marginBottom: 8 },
   listItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
   listIcon: { marginRight: 10, marginTop: 2 },
-  listText: { fontSize: 15, color: '#4a5568', flex: 1, lineHeight: 22 },
+  listText: { fontSize: 15, color: colors.textSecondary, flex: 1, lineHeight: 22 },
 
   itinerarySection: { marginBottom: 24 },
-  itineraryCard: { backgroundColor: '#f8f9fa', borderRadius: 8, marginBottom: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#e2e8f0' },
-  itineraryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#fff' },
-  itineraryDay: { fontSize: 16, fontWeight: '700', color: '#2d3748' },
-  itineraryContent: { padding: 16, paddingTop: 0, backgroundColor: '#fff' },
-  itineraryText: { fontSize: 15, color: '#4a5568', lineHeight: 24 },
+  itineraryCard: { backgroundColor: colors.background, borderRadius: 8, marginBottom: 8, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
+  itineraryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: colors.card },
+  itineraryDay: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  itineraryContent: { padding: 16, paddingTop: 0, backgroundColor: colors.card },
+  itineraryText: { fontSize: 15, color: colors.textSecondary, lineHeight: 24 },
 
-  bookingSelectionSection: { backgroundColor: '#f8f9fa', padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#e2e8f0' },
-  selectionLabel: { fontSize: 14, fontWeight: '700', color: '#4a5568', marginBottom: 8, marginTop: 12 },
+  bookingSelectionSection: { backgroundColor: colors.background, padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: colors.border },
+  selectionLabel: { fontSize: 14, fontWeight: '700', color: colors.textSecondary, marginBottom: 8, marginTop: 12 },
   selectionScroll: { marginBottom: 12, paddingBottom: 4 },
-  chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 100, backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e0', marginRight: 10 },
-  chipActive: { backgroundColor: '#00b0ff', borderColor: '#00b0ff' },
-  chipText: { fontSize: 14, color: '#4a5568', fontWeight: '500' },
-  chipTextActive: { color: '#fff', fontWeight: '700' },
-  addonRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: '#e2e8f0' },
-  addonRowActive: { borderColor: '#00b0ff', backgroundColor: '#e0f7ff' },
-  addonCheck: { width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: '#cbd5e0', marginRight: 12, justifyContent: 'center', alignItems: 'center' },
-  addonCheckActive: { backgroundColor: '#00b0ff', borderColor: '#00b0ff' },
-  addonName: { flex: 1, fontSize: 15, color: '#2d3748', fontWeight: '500' },
-  addonPrice: { fontSize: 15, fontWeight: '700', color: '#00b0ff' },
+  chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 100, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginRight: 10 },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
+  chipTextActive: { color: colors.card, fontWeight: '700' },
+  addonRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, padding: 12, borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
+  addonRowActive: { borderColor: colors.primary, backgroundColor: '#e0f7ff' },
+  addonCheck: { width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: colors.border, marginRight: 12, justifyContent: 'center', alignItems: 'center' },
+  addonCheckActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  addonName: { flex: 1, fontSize: 15, color: colors.textPrimary, fontWeight: '500' },
+  addonPrice: { fontSize: 15, fontWeight: '700', color: colors.primary },
   seatsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 },
-  stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 100, borderWidth: 1, borderColor: '#cbd5e0' },
+  stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: 100, borderWidth: 1, borderColor: colors.border },
   stepBtn: { padding: 10, paddingHorizontal: 16 },
   stepValue: { fontSize: 18, fontWeight: '700', color: '#1a1a1a', minWidth: 24, textAlign: 'center' },
 
-  totalBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1a202c', padding: 16, borderRadius: 12, marginBottom: 24 },
-  totalBoxLabel: { fontSize: 16, color: '#a0aec0', fontWeight: '600' },
-  totalBoxValue: { fontSize: 24, fontWeight: '800', color: '#fff' },
+  totalBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.textPrimary, padding: 16, borderRadius: 12, marginBottom: 24 },
+  totalBoxLabel: { fontSize: 16, color: colors.textSecondary, fontWeight: '600' },
+  totalBoxValue: { fontSize: 24, fontWeight: '800', color: colors.card },
 
   // Image gallery dots
   dotsContainer: { 
@@ -816,7 +819,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4 
   },
   dotActive: { 
-    backgroundColor: '#fff', 
+    backgroundColor: colors.card, 
     width: 24 
   },
 });
