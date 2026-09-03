@@ -1,10 +1,11 @@
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { AppProvider, useAppContext } from '../context/AppContext';
 import { ThemeProvider, useTheme, ThemeColors } from '../context/ThemeContext';
+import { Logger } from '../utils/logger';
 
 import { FontAwesome } from '@expo/vector-icons';
 import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -86,8 +87,12 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
               style={[styles.loginRoleBtn, { backgroundColor: isDark ? '#333' : '#4a5568', marginTop: 15 }]} 
               onPress={async () => {
                 setShowLoginModal(false);
-                await loginWithGoogle('vendor');
-                router.push('/vendor-dashboard');
+                try {
+                  await loginWithGoogle('vendor');
+                  router.push('/vendor-dashboard');
+                } catch (e) {
+                  Logger.error('Vendor login failed', e);
+                }
               }}
             >
               <FontAwesome name="briefcase" size={20} color="white" style={{ marginRight: 10 }} />
@@ -147,6 +152,18 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
 
 export default function RootLayout() {
   const [showLangModal, setShowLangModal] = useState(false);
+
+  // Global crash protection: log unhandled errors to Firestore
+  useEffect(() => {
+    const defaultHandler = ErrorUtils.getGlobalHandler();
+    ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
+      Logger.error(`Global${isFatal ? ' FATAL' : ''} error`, error);
+      if (defaultHandler) defaultHandler(error, isFatal);
+    });
+    return () => {
+      if (defaultHandler) ErrorUtils.setGlobalHandler(defaultHandler);
+    };
+  }, []);
 
   const handleLangChange = (code: string) => {
     changeLanguage(code);

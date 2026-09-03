@@ -624,18 +624,19 @@ export default function TripDetailScreen() {
           </View>
 
           {/* Promo Code Section */}
-          <View style={{ marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
+          <View style={{ marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
             <Text style={styles.selectionLabel}>Promo Code</Text>
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <TextInput
-                style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 12, height: 48, backgroundColor: colors.card, textTransform: 'uppercase' }}
+                style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 12, height: 48, backgroundColor: colors.card, textTransform: 'uppercase', color: colors.textPrimary }}
                 placeholder="Enter Code"
+                placeholderTextColor={colors.textSecondary}
                 value={discountCode}
                 onChangeText={setDiscountCode}
                 autoCapitalize="characters"
               />
               <TouchableOpacity 
-                style={{ backgroundColor: discountPercent > 0 ? '#10b981' : '#0ea5e9', justifyContent: 'center', paddingHorizontal: 20, borderRadius: 8, height: 48 }}
+                style={{ backgroundColor: discountPercent > 0 ? '#10b981' : colors.primary, justifyContent: 'center', paddingHorizontal: 20, borderRadius: 8, height: 48 }}
                 onPress={handleApplyDiscount}
                 disabled={isApplyingDiscount || discountPercent > 0}
               >
@@ -698,11 +699,11 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
   heroScroll: { height: 300 },
   heroImage: { height: 300, resizeMode: 'cover' },
   detailsContainer: { padding: 24, borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: colors.card, marginTop: -30, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
-  liveBanner: { backgroundColor: '#fef2f2', padding: 8, borderRadius: 8, marginBottom: 15, alignItems: 'center', borderWidth: 1, borderColor: '#fca5a5' },
+  liveBanner: { backgroundColor: colors.background, padding: 8, borderRadius: 8, marginBottom: 15, alignItems: 'center', borderWidth: 1, borderColor: colors.danger },
   liveBannerText: { color: colors.danger, fontWeight: 'bold' },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
   titleContainer: { flex: 1, marginRight: 10 },
-  title: { fontSize: 28, fontWeight: '800', color: '#1a1a1a' },
+  title: { fontSize: 28, fontWeight: '800', color: colors.textPrimary },
   date: { fontSize: 14, color: colors.textSecondary, marginTop: 6, fontWeight: '500' },
   price: { fontSize: 24, fontWeight: 'bold', color: colors.primary },
   shareIconText: { marginLeft: 8, fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
@@ -710,32 +711,32 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     position: 'absolute', top: 16, right: 16, zIndex: 10,
     backgroundColor: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 25
   },
-  countdownContainer: { backgroundColor: '#f0f9ff', padding: 12, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: '#bae6fd', alignItems: 'center' },
-  countdownTitle: { color: '#0369a1', fontWeight: 'bold', marginBottom: 8, fontSize: 14 },
+  countdownContainer: { backgroundColor: colors.background, padding: 12, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
+  countdownTitle: { color: colors.primary, fontWeight: 'bold', marginBottom: 8, fontSize: 14 },
   countdownRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   countdownBox: { backgroundColor: colors.card, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', minWidth: 60, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 1 },
-  countdownNum: { fontSize: 18, fontWeight: 'bold', color: '#0f172a' },
-  countdownLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', marginTop: 2, fontWeight: '600' },
-  countdownSep: { fontSize: 20, fontWeight: 'bold', color: '#bae6fd', marginBottom: 12 },
+  countdownNum: { fontSize: 18, fontWeight: 'bold', color: colors.textPrimary },
+  countdownLabel: { fontSize: 10, color: colors.textSecondary, textTransform: 'uppercase', marginTop: 2, fontWeight: '600' },
+  countdownSep: { fontSize: 20, fontWeight: 'bold', color: colors.border, marginBottom: 12 },
   
   liveSection: { backgroundColor: colors.background, padding: 16, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: colors.border },
   vehicleImage: { width: '100%', height: 150, borderRadius: 8, marginBottom: 12 },
   crewInfoBox: { marginBottom: 16 },
   crewLabel: { fontSize: 14, color: colors.textSecondary, marginBottom: 4 },
-  crewValue: { fontWeight: 'bold', color: '#1a1a1a' },
+  crewValue: { fontWeight: 'bold', color: colors.textPrimary },
   mapWrapper: { height: 200, borderRadius: 8, overflow: 'hidden', marginBottom: 16 },
   map: { flex: 1 },
   mapPlaceholder: { flex: 1, backgroundColor: colors.border, justifyContent: 'center', alignItems: 'center' },
   joinBtn: { backgroundColor: '#4ade80', padding: 14, borderRadius: 8, alignItems: 'center' },
   joinBtnText: { color: colors.card, fontWeight: 'bold', fontSize: 16 },
   trackingPill: { backgroundColor: colors.success, padding: 12, borderRadius: 8, alignItems: 'center' },
-  trackingPillText: { color: '#166534', fontWeight: 'bold' },
+  trackingPillText: { color: colors.textPrimary, fontWeight: 'bold' },
 
   statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
-  statBox: { flex: 1, backgroundColor: '#f5f7fa', padding: 16, borderRadius: 12, alignItems: 'center', marginHorizontal: 4 },
-  statLabel: { fontSize: 12, color: '#8a94a6', textTransform: 'uppercase', fontWeight: '600', marginBottom: 4 },
+  statBox: { flex: 1, backgroundColor: colors.background, padding: 16, borderRadius: 12, alignItems: 'center', marginHorizontal: 4 },
+  statLabel: { fontSize: 12, color: colors.textSecondary, textTransform: 'uppercase', fontWeight: '600', marginBottom: 4 },
   statValue: { fontSize: 20, fontWeight: 'bold', color: colors.textPrimary },
-  sectionTitle: { fontSize: 20, fontWeight: '700', color: '#1a1a1a', marginBottom: 12 },
+  sectionTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, marginBottom: 12 },
   description: { fontSize: 16, lineHeight: 24, color: colors.textSecondary, marginBottom: 24 },
   
   pickupSection: { marginBottom: 24 },
@@ -749,17 +750,17 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
   vendorName: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
   vendorInfoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   vendorInfoText: { fontSize: 12, color: colors.textSecondary, marginLeft: 6 },
-  shareButton: { padding: 12, backgroundColor: '#e0f7ff', borderRadius: 100 },
+  shareButton: { padding: 12, backgroundColor: colors.background, borderRadius: 100, borderWidth: 1, borderColor: colors.border },
   buttonRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   bookButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 100, elevation: 4 },
   bookButtonText: { color: colors.card, fontSize: 16, fontWeight: 'bold' },
-  proceedButton: { backgroundColor: '#0f172a', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  proceedButton: { backgroundColor: colors.primary, shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: colors.card, padding: 24, borderRadius: 16 },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 8, color: colors.textPrimary },
   modalDesc: { color: colors.textSecondary, marginBottom: 16 },
-  modalInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, marginBottom: 20, fontSize: 16 },
+  modalInput: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 12, marginBottom: 20, fontSize: 16, color: colors.textPrimary, backgroundColor: colors.background },
   modalBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
   cancelBtn: { padding: 12 },
   confirmBtn: { backgroundColor: '#4ade80', padding: 12, borderRadius: 8, paddingHorizontal: 20 },
@@ -787,7 +788,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
   chipText: { fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
   chipTextActive: { color: colors.card, fontWeight: '700' },
   addonRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, padding: 12, borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
-  addonRowActive: { borderColor: colors.primary, backgroundColor: '#e0f7ff' },
+  addonRowActive: { borderColor: colors.primary, backgroundColor: colors.background },
   addonCheck: { width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: colors.border, marginRight: 12, justifyContent: 'center', alignItems: 'center' },
   addonCheckActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   addonName: { flex: 1, fontSize: 15, color: colors.textPrimary, fontWeight: '500' },
@@ -795,7 +796,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
   seatsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 },
   stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: 100, borderWidth: 1, borderColor: colors.border },
   stepBtn: { padding: 10, paddingHorizontal: 16 },
-  stepValue: { fontSize: 18, fontWeight: '700', color: '#1a1a1a', minWidth: 24, textAlign: 'center' },
+  stepValue: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, minWidth: 24, textAlign: 'center' },
 
   totalBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.textPrimary, padding: 16, borderRadius: 12, marginBottom: 24 },
   totalBoxLabel: { fontSize: 16, color: colors.textSecondary, fontWeight: '600' },

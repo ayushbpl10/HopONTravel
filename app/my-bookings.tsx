@@ -34,7 +34,7 @@ export default function MyBookingsScreen() {
       } catch (e) {}
 
       try {
-        const q = query(collection(db, 'bookings'), where('vendorId', '==', userProfile.id));
+        const q = query(collection(db, 'bookings'), where('userId', '==', userProfile.id));
         const snap = await getDocs(q);
         const data: Booking[] = [];
         snap.forEach(doc => data.push({ id: doc.id, ...doc.data() } as Booking));
@@ -118,7 +118,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
   tripTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   details: { fontSize: 14, color: colors.textSecondary, marginBottom: 4 },
   emptyTitle: { fontSize: 20, fontWeight: 'bold', color: colors.textSecondary, marginTop: 20 },
-  emptySubtitle: { fontSize: 15, color: '#8a94a6', textAlign: 'center', marginTop: 8, paddingHorizontal: 30 },
+  emptySubtitle: { fontSize: 15, color: colors.textSecondary, textAlign: 'center', marginTop: 8, paddingHorizontal: 30 },
   loginBtn: { marginTop: 20, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 100 },
   loginBtnText: { color: colors.card, fontWeight: '700', fontSize: 16 }
 });
