@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Link, router } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Animated, FlatList, ImageBackground, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, FlatList, ImageBackground, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Modal } from 'react-native';
 import { Skeleton } from '../components/Skeleton';
 import { useAppContext } from '../context/AppContext';
 import { useWishlist } from '../hooks/useWishlist';
@@ -95,6 +95,9 @@ export default function HomeScreen() {
   const [activeFilter, setActiveFilter] = useState(0);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeDestination, setActiveDestination] = useState<string | null>(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showDestinationModal, setShowDestinationModal] = useState(false);
+  const [showPriceModal, setShowPriceModal] = useState(false);
 
   const filteredTrips = useMemo(() => {
     const filter = PRICE_FILTERS[activeFilter];
@@ -135,90 +138,54 @@ export default function HomeScreen() {
     <View style={styles.container}>
       {/* Hero Section */}
       <ImageBackground 
-        source={{ uri: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&q=80' }} 
+        source={require('../assets/images/Media.jpg')} 
         style={styles.heroSection}
       >
         <LinearGradient
           colors={['rgba(0,0,0,0.4)', isDark ? colors.background : 'rgba(240,242,245,1)']}
           style={StyleSheet.absoluteFillObject}
         />
+        
         <View style={styles.heroContent}>
-          <Text style={styles.heroTitle}>{t('explore.heroTitle', 'Discover Your Next Adventure')}</Text>
-          <Text style={styles.heroSubtitle}>{t('explore.heroSubtitle', 'Find and book the best trips directly from verified local guides.')}</Text>
+          <Text style={styles.heroTitle}>{t('explore.heroTitle', 'Ab Toh Ghoom Le!')}</Text>
+          <View style={styles.searchBlurContainer}>
+            <FontAwesome name="search" size={16} color={colors.textSecondary} style={styles.searchIcon} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.textPrimary }]}
+              placeholder={t('explore.searchPlaceholder')}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              clearButtonMode="while-editing"
+              placeholderTextColor={colors.textSecondary}
+            />
+          </View>
         </View>
 
         <TouchableOpacity 
-          style={{ position: 'absolute', top: 50, right: 20, backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 20 }}
+          style={styles.heroWishlistBtn}
           onPress={() => router.push('/wishlist' as any)}
         >
-          <FontAwesome name="heart" size={20} color="#ef4444" />
+          <FontAwesome name="heart" size={18} color="#ef4444" />
         </TouchableOpacity>
-
-        {/* Glassmorphic Search Bar */}
-        <BlurView intensity={80} tint={isDark ? 'dark' : 'default'} style={styles.searchBlurContainer}>
-          <FontAwesome name="search" size={18} color={colors.textSecondary} style={styles.searchIcon} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.textPrimary }]}
-            placeholder={t('explore.searchPlaceholder')}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCapitalize="none"
-            clearButtonMode="while-editing"
-            placeholderTextColor={colors.textSecondary}
-          />
-        </BlurView>
       </ImageBackground>
 
-      {/* Filter Chips */}
+      {/* Filter Dropdown Row */}
       <View style={styles.filterWrapper}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.filterRow, { marginBottom: 10 }]} contentContainerStyle={{ paddingHorizontal: 16 }}>
-          <TouchableOpacity onPress={() => setActiveCategory(null)}>
-            <View style={[styles.filterChip, !activeCategory && { backgroundColor: isDark ? '#3b215e' : '#f3e8ff', borderColor: isDark ? '#6b21a8' : '#d8b4fe', borderWidth: 1 }]}>
-              <Text style={[styles.filterChipText, !activeCategory && { color: isDark ? '#d8b4fe' : '#7e22ce', fontWeight: 'bold' }]}>All Trips</Text>
-            </View>
+        <View style={styles.dropdownRow}>
+          <TouchableOpacity style={styles.dropdownBtn} onPress={() => setShowCategoryModal(true)}>
+            <Text style={styles.dropdownBtnText} numberOfLines={1}>{activeCategory || 'Category'}</Text>
+            <FontAwesome name="angle-down" size={14} color={colors.textSecondary} />
           </TouchableOpacity>
-          {['Trekking', 'Camping', 'Beach', 'Road Trip', 'Pilgrimage', 'International'].map((cat) => (
-            <TouchableOpacity key={cat} onPress={() => setActiveCategory(cat)}>
-              <View style={[styles.filterChip, activeCategory === cat && { backgroundColor: isDark ? '#3b215e' : '#f3e8ff', borderColor: isDark ? '#6b21a8' : '#d8b4fe', borderWidth: 1 }]}>
-                <Text style={[styles.filterChipText, activeCategory === cat && { color: isDark ? '#d8b4fe' : '#7e22ce', fontWeight: 'bold' }]}>{cat}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.filterRow, { marginBottom: 10 }]} contentContainerStyle={{ paddingHorizontal: 16 }}>
-          <TouchableOpacity onPress={() => setActiveDestination(null)}>
-            <View style={[styles.filterChip, !activeDestination && { backgroundColor: isDark ? '#083344' : '#e0f2fe', borderColor: isDark ? '#0c4a6e' : '#7dd3fc', borderWidth: 1 }]}>
-              <Text style={[styles.filterChipText, !activeDestination && { color: isDark ? '#7dd3fc' : '#0369a1', fontWeight: 'bold' }]}>Anywhere</Text>
-            </View>
+          <TouchableOpacity style={styles.dropdownBtn} onPress={() => setShowDestinationModal(true)}>
+            <Text style={styles.dropdownBtnText} numberOfLines={1}>{activeDestination || 'Destination'}</Text>
+            <FontAwesome name="angle-down" size={14} color={colors.textSecondary} />
           </TouchableOpacity>
-          {['Pune', 'Mumbai', 'Bangalore'].map((dest) => (
-            <TouchableOpacity key={dest} onPress={() => setActiveDestination(dest)}>
-              <View style={[styles.filterChip, activeDestination === dest && { backgroundColor: isDark ? '#083344' : '#e0f2fe', borderColor: isDark ? '#0c4a6e' : '#7dd3fc', borderWidth: 1 }]}>
-                <Text style={[styles.filterChipText, activeDestination === dest && { color: isDark ? '#7dd3fc' : '#0369a1', fontWeight: 'bold' }]}>{dest}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={{ paddingHorizontal: 16 }}>
-          {PRICE_FILTERS.map((f, idx) => (
-            <TouchableOpacity
-              key={idx}
-              onPress={() => setActiveFilter(idx)}
-            >
-              {activeFilter === idx ? (
-                <View style={[styles.filterChip, { backgroundColor: colors.primary, borderWidth: 0 }]}>
-                  <Text style={[styles.filterChipTextActive, { color: isDark ? '#000' : '#fff' }]}>{t(f.labelKey, f.defaultLabel)}</Text>
-                </View>
-              ) : (
-                <View style={styles.filterChip}>
-                  <Text style={styles.filterChipText}>{t(f.labelKey, f.defaultLabel)}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+          <TouchableOpacity style={styles.dropdownBtn} onPress={() => setShowPriceModal(true)}>
+            <Text style={styles.dropdownBtnText} numberOfLines={1}>{PRICE_FILTERS[activeFilter].defaultLabel}</Text>
+            <FontAwesome name="angle-down" size={14} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Trip List */}
@@ -247,6 +214,58 @@ export default function HomeScreen() {
           </View>
         }
       />
+
+      {/* Dropdown Modals */}
+      <Modal visible={showCategoryModal} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCategoryModal(false)}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Category</Text>
+            <ScrollView style={{ maxHeight: 300 }}>
+              <TouchableOpacity style={styles.dropdownOption} onPress={() => { setActiveCategory(null); setShowCategoryModal(false); }}>
+                <Text style={[styles.dropdownOptionText, !activeCategory && { color: colors.primary, fontWeight: 'bold' }]}>All Trips</Text>
+              </TouchableOpacity>
+              {['Trekking', 'Camping', 'Beach', 'Road Trip', 'Pilgrimage', 'International'].map((cat) => (
+                <TouchableOpacity key={cat} style={styles.dropdownOption} onPress={() => { setActiveCategory(cat); setShowCategoryModal(false); }}>
+                  <Text style={[styles.dropdownOptionText, activeCategory === cat && { color: colors.primary, fontWeight: 'bold' }]}>{cat}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={showDestinationModal} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDestinationModal(false)}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Destination</Text>
+            <ScrollView style={{ maxHeight: 300 }}>
+              <TouchableOpacity style={styles.dropdownOption} onPress={() => { setActiveDestination(null); setShowDestinationModal(false); }}>
+                <Text style={[styles.dropdownOptionText, !activeDestination && { color: colors.primary, fontWeight: 'bold' }]}>Anywhere</Text>
+              </TouchableOpacity>
+              {['Pune', 'Mumbai', 'Bangalore'].map((dest) => (
+                <TouchableOpacity key={dest} style={styles.dropdownOption} onPress={() => { setActiveDestination(dest); setShowDestinationModal(false); }}>
+                  <Text style={[styles.dropdownOptionText, activeDestination === dest && { color: colors.primary, fontWeight: 'bold' }]}>{dest}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={showPriceModal} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPriceModal(false)}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Price Range</Text>
+            <ScrollView style={{ maxHeight: 300 }}>
+              {PRICE_FILTERS.map((f, idx) => (
+                <TouchableOpacity key={idx} style={styles.dropdownOption} onPress={() => { setActiveFilter(idx); setShowPriceModal(false); }}>
+                  <Text style={[styles.dropdownOptionText, activeFilter === idx && { color: colors.primary, fontWeight: 'bold' }]}>{t(f.labelKey, f.defaultLabel)}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -254,52 +273,102 @@ export default function HomeScreen() {
 const getStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   heroSection: {
-    height: 280,
+    height: 180, // Reduced from 280
     justifyContent: 'flex-end',
-    paddingBottom: 20,
+    paddingBottom: 15,
   },
   heroContent: {
-    paddingHorizontal: 24,
-    marginBottom: 20,
+    paddingHorizontal: 20,
+    marginBottom: 5,
   },
   heroTitle: {
-    fontSize: 32,
+    fontSize: 26, // Slightly smaller
     fontWeight: '900',
     color: '#ffffff',
-    marginBottom: 8,
+    marginBottom: 12,
     textShadowColor: 'rgba(0,0,0,0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 10,
   },
-  heroSubtitle: {
-    fontSize: 15,
-    color: '#e2e8f0',
-    fontWeight: '500',
-    lineHeight: 22,
+  heroWishlistBtn: {
+    position: 'absolute', 
+    top: 50, 
+    right: 20, 
+    backgroundColor: 'rgba(255,255,255,0.25)', 
+    padding: 10, 
+    borderRadius: 20
   },
   searchBlurContainer: {
     flexDirection: 'row', alignItems: 'center', 
-    marginHorizontal: 16, borderRadius: 16, paddingHorizontal: 16,
-    paddingVertical: 14, overflow: 'hidden',
+    borderRadius: 12, paddingHorizontal: 12,
+    paddingVertical: 10, overflow: 'hidden',
+    backgroundColor: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)',
     borderWidth: 1, borderColor: colors.border,
   },
-  searchIcon: { marginRight: 12 },
-  searchInput: { flex: 1, fontSize: 16, color: colors.textPrimary, fontWeight: '500' },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 15, color: colors.textPrimary, fontWeight: '500', padding: 0 },
   filterWrapper: {
     marginTop: 10,
     marginBottom: 5,
   },
-  filterRow: { maxHeight: 50 },
-  filterChip: {
-    paddingHorizontal: 18, paddingVertical: 10, borderRadius: 25, 
-    backgroundColor: colors.card, marginRight: 10, 
-    justifyContent: 'center', alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05, shadowRadius: 3, elevation: 2,
-    borderWidth: 1, borderColor: colors.border,
+  dropdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
   },
-  filterChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
-  filterChipTextActive: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
+  dropdownBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.card,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dropdownBtnText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: 280,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 20,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  dropdownOption: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  dropdownOptionText: {
+    fontSize: 16,
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
   listContainer: { padding: 16, paddingBottom: 40 },
   emptyContainer: { flex: 1, padding: 16 },
   cardContainer: {

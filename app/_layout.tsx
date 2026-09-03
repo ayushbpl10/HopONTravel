@@ -21,21 +21,11 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
   const [showLoginModal, setShowLoginModal] = useState(false);
   const styles = getStyles(colors);
 
-  const handleTravellerPress = () => {
+  const handleProfilePress = () => {
     if (userProfile?.role === 'traveller') {
       router.push('/my-bookings');
     } else if (userProfile?.role === 'vendor') {
-      Alert.alert('Notice', 'You are logged in as a Vendor. Please logout first to switch roles.');
-    } else {
-      setShowLoginModal(true);
-    }
-  };
-
-  const handleVendorPress = () => {
-    if (userProfile?.role === 'vendor') {
       router.push('/vendor-dashboard');
-    } else if (userProfile?.role === 'traveller') {
-      Alert.alert('Notice', 'You are logged in as a Traveller. Please logout first to switch roles.');
     } else {
       setShowLoginModal(true);
     }
@@ -74,9 +64,9 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
 
             <TouchableOpacity 
               style={[styles.loginRoleBtn, { backgroundColor: colors.primary }]} 
-              onPress={async () => {
+              onPress={() => {
                 setShowLoginModal(false);
-                await loginWithGoogle('traveller');
+                router.push('/traveller-login');
               }}
             >
               <FontAwesome name="user" size={20} color={isDark ? "#000" : "#fff"} style={{ marginRight: 10 }} />
@@ -85,14 +75,9 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
 
             <TouchableOpacity 
               style={[styles.loginRoleBtn, { backgroundColor: isDark ? '#333' : '#4a5568', marginTop: 15 }]} 
-              onPress={async () => {
+              onPress={() => {
                 setShowLoginModal(false);
-                try {
-                  await loginWithGoogle('vendor');
-                  router.push('/vendor-dashboard');
-                } catch (e) {
-                  Logger.error('Vendor login failed', e);
-                }
+                router.push('/vendor-login');
               }}
             >
               <FontAwesome name="briefcase" size={20} color="white" style={{ marginRight: 10 }} />
@@ -125,11 +110,8 @@ function RootLayoutNav({ showLangModal, setShowLangModal, handleLangChange }: an
                 >
                   <FontAwesome name="language" size={24} color={colors.primary} />
                 </TouchableOpacity>
-                <TouchableOpacity style={{ marginRight: 15 }} onPress={handleTravellerPress}>
-                  <FontAwesome name="user" size={24} color={colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity style={{ marginRight: 10 }} onPress={handleVendorPress}>
-                  <FontAwesome name="briefcase" size={24} color={colors.primary} />
+                <TouchableOpacity style={{ marginRight: 10 }} onPress={handleProfilePress}>
+                  <FontAwesome name="user-circle-o" size={24} color={colors.primary} />
                 </TouchableOpacity>
               </View>
             )
