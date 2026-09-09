@@ -90,8 +90,8 @@ export const useScreenshotPrevention = (enabled: boolean = true) => {
     if (preventScreenCaptureModule?.addScreenshotListener) {
       subscription = preventScreenCaptureModule.addScreenshotListener(() => {
         Alert.alert(
-          'Screenshot Detected',
-          'Screenshots are not allowed in the Vendor Dashboard. Please pay the export fee to download data.',
+          'Screen Capture Blocked',
+          'Screen capture is not permitted in the Vendor Dashboard. Please export data instead.',
           [{ text: 'OK' }]
         );
       });
@@ -112,13 +112,13 @@ export const useScreenshotPrevention = (enabled: boolean = true) => {
 // Helper functions for web
 const preventContextMenu = (e: Event) => {
   e.preventDefault();
-  Alert.alert('Action Blocked', 'Right-click is disabled. Pay export fee to download data.');
+  Alert.alert('Action Blocked', 'Right-click is disabled. Please export data instead.');
 };
 
 const preventPrintScreen = (e: KeyboardEvent) => {
   if (e.key === 'PrintScreen' || (e.ctrlKey && e.key === 'p')) {
     e.preventDefault();
-    Alert.alert('Action Blocked', 'Screenshots and printing are disabled. Pay export fee to download data.');
+    Alert.alert('Action Blocked', 'Screen capture and printing are not permitted. Please export data instead.');
   }
 };
 

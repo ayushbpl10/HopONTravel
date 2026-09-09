@@ -46,7 +46,8 @@ export default function VendorDashboardScreen() {
   const [termsInput, setTermsInput] = useState(userProfile?.termsAndConditions || DEFAULT_TERMS_AND_CONDITIONS);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
-  const [activeTab, setActiveTab] = useState<'trips' | 'bookings'>('trips');
+  const [activeTab, setActiveTab] = useState<'trips' | 'bookings' | 'settings'>('trips');
+  const [isPublishingSample, setIsPublishingSample] = useState(false);
   const [bookingSearch, setBookingSearch] = useState('');
   const [selectedBookings, setSelectedBookings] = useState<Set<string>>(new Set());
   const { t } = useTranslation();
@@ -116,12 +117,19 @@ export default function VendorDashboardScreen() {
   useScreenshotPrevention(userProfile?.role === 'vendor');
 
   useEffect(() => {
+    if (userProfile) {
+      if (userProfile.upiId && !upiInput) setUpiInput(userProfile.upiId);
+      if (userProfile.whatsappNumber && !waInput) setWaInput(userProfile.whatsappNumber);
+      if (userProfile.name && !nameInput) setNameInput(userProfile.name);
+      if (userProfile.instagramUrl && !instaInput) setInstaInput(userProfile.instagramUrl);
+      if (userProfile.termsAndConditions && !termsInput) setTermsInput(userProfile.termsAndConditions);
+    }
     if (userProfile?.paymentSettings) {
       setPaymentEnabled(userProfile.paymentSettings.enabled);
       setPaymentGateway(userProfile.paymentSettings.gateway);
       setRazorpayKeyId(userProfile.paymentSettings.razorpayKeyId || '');
     }
-  }, [userProfile?.paymentSettings]);
+  }, [userProfile]);
 
   const handleAddDiscountCode = () => {
     if (!newDiscountCode.trim()) return;
@@ -262,36 +270,78 @@ export default function VendorDashboardScreen() {
 
   const handleQuickCreateSampleTrip = async () => {
     if (!userProfile) return;
+    const myTripsCount = trips.filter(t => t.vendorId === userProfile?.id).length;
+    if (myTripsCount >= LIMITS.MAX_TRIPS_PER_VENDOR) {
+      Alert.alert('Limit Reached', `You can only have up to ${LIMITS.MAX_TRIPS_PER_VENDOR} active trip listings on the free plan.`);
+      return;
+    }
+
+    setIsPublishingSample(true);
     try {
       const sampleTpl = TRIP_TEMPLATES[0]; // Harishchandragad & Kokankada
       const sample = sampleTpl.templateData;
+
+      // Generate dynamic upcoming weekend date
+      const now = new Date();
+      const nextSat = new Date();
+      nextSat.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7 || 7));
+      const nextSun = new Date(nextSat);
+      nextSun.setDate(nextSat.getDate() + 1);
+      const satDay = nextSat.getDate();
+      const sunDay = nextSun.getDate();
+      const monthName = nextSat.toLocaleString('en-GB', { month: 'short' });
+      const dynamicDateDuration = `${satDay < 10 ? '0' + satDay : satDay}-${sunDay < 10 ? '0' + sunDay : sunDay} ${monthName} (Sat night to Sun night)`;
+
       const newTripData = {
         title: sample.title || 'Harishchandragad & Kokankada Trek',
-        description: sample.description || '',
+        description: sample.description || 'Explore the mighty Harishchandragad fort, ancient Kedareshwar cave, and experience the breathtaking drop of Kokankada cliff. Overnight trek with camping & sunrise view.',
         vendorId: userProfile.id,
         vendorName: userProfile.name || 'Verified Vendor',
         vendorWhatsApp: userProfile.whatsappNumber || '',
-        vendorUPI: userProfile.upiId ? [userProfile.upiId] : [],
+        vendorUPI: userProfile.upiId ? [userProfile.upiId] : ['merchant@bank'],
         vendorInstagram: userProfile.instagramUrl || '',
-        termsAndConditions: userProfile.termsAndConditions || '',
+        termsAndConditions: userProfile.termsAndConditions || DEFAULT_TERMS_AND_CONDITIONS,
         category: sample.category || 'Trekking',
         destination: sample.destination || 'Harishchandragad',
-        tripStatus: 'upcoming',
+        status: 'published' as const,
         isPublished: true,
-        batches: sample.batches || [{ id: 'b1', dateDuration: '05 Sep - 06 Sep', totalSeats: 20, bookedSeats: 0 }],
-        packages: sample.packages || [{ name: 'Base Package', price: 999 }],
-        inclusions: sample.inclusions || [],
-        exclusions: sample.exclusions || [],
-        pickupPoints: sample.pickupPoints || [],
-        structuredItinerary: sample.structuredItinerary || [],
-        images: sample.images || [],
+        tripStatus: 'upcoming' as const,
+        batches: [
+          { id: `b_${Date.now()}`, dateDuration: dynamicDateDuration, totalSeats: 20, bookedSeats: 0 }
+        ],
+        packages: sample.packages && sample.packages.length > 0 ? sample.packages : [
+          { name: 'Pune Transport', price: 999 },
+          { name: 'Mumbai Transport', price: 1099 }
+        ],
+        addOns: sample.addOns || [
+          { name: 'Non-veg Dinner Extra', price: 150 },
+          { name: 'Tent Twin Sharing', price: 200 }
+        ],
+        pickupPoints: sample.pickupPoints || [
+          { location: 'Pune - Shivajinagar / Swargate', time: '10:00 PM' },
+          { location: 'Mumbai - Dadar / Thane', time: '10:30 PM' }
+        ],
+        itinerary: sample.itinerary || 'Day 1 (Saturday Night): Departure from Pune/Mumbai\nDay 2 (Sunday): Reach base village, breakfast, ascend to Kokankada, lunch, explore caves, descend & return by Sunday night.',
+        structuredItinerary: [
+          { day: 1, title: 'Departure & Overnight Travel', description: 'Meet trek leaders at pickup points. Board private transport and travel overnight towards base village.' },
+          { day: 2, title: 'Ascend, Kokankada Cliff & Return', description: 'Reach base village, freshen up, enjoy hot breakfast. Trek up to Harishchandragad, explore Kedareshwar temple & Kokankada. Lunch at base and return journey.' }
+        ],
+        inclusions: sample.inclusions || ['To & Fro Bus Transport', 'Breakfast & Tea (1x)', 'Lunch (1x)', 'Trek Leader Expertise', 'First Aid'],
+        exclusions: sample.exclusions || ['Personal Expenses', 'Dinner on Day 1', 'Anything not mentioned in inclusions'],
+        thingsToCarry: sample.thingsToCarry || ['Good Trekking Shoes', 'Water Bottle (2L)', 'Torch / Flashlight', 'Extra Clothes', 'Raincoat / Poncho'],
+        cancellationPolicy: sample.cancellationPolicy || ['Non-refundable advance', 'Cancellations before 48 hrs get 50% credit'],
+        images: sample.images && sample.images.length > 0 ? sample.images : [
+          'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?auto=format&fit=crop&w=800&q=80'
+        ],
         createdAt: new Date().toISOString(),
       };
       await addTrip(newTripData as any);
-      Alert.alert('🎉 Published in 2 Seconds!', `Sample Trip "${newTripData.title}" created & published live!`);
+      Alert.alert('🎉 Published Successfully!', `Sample Trip "${newTripData.title}" created & published live!`);
     } catch (err: any) {
       console.error('Error quick publishing sample trip:', err);
-      Alert.alert('Error', 'Could not quick-publish sample trip.');
+      Alert.alert('Error', err?.message || 'Could not quick-publish sample trip. Please check your connection.');
+    } finally {
+      setIsPublishingSample(false);
     }
   };
 
@@ -330,11 +380,11 @@ export default function VendorDashboardScreen() {
         
         Alert.alert(
           'Export Data',
-          `Pay ₹${EXPORT_CHARGE} to export booking data for "${trip.title}".\n\nYou'll get:\n• Excel (CSV) file\n• PDF report\n• Traveller contact details`,
+          `Export booking data for "${trip.title}".\n\nYou'll get:\n• Excel (CSV) file\n• PDF report\n• Traveller contact details`,
           [
             { text: 'Cancel', style: 'cancel' },
             { 
-              text: `Pay ₹${EXPORT_CHARGE}`, 
+              text: 'Proceed to Export', 
               onPress: async () => {
                 setExportingTripId(trip.id);
                 setIsExporting(true);
@@ -712,7 +762,7 @@ export default function VendorDashboardScreen() {
           }
 
           // 2. Open email client with the full log bundle
-          const subject = encodeURIComponent(`[HopON Bug Report] ${new Date().toLocaleDateString('en-IN')} – ${userProfile?.name || 'Unknown Vendor'}`);
+          const subject = encodeURIComponent(`[Bug Report] ${new Date().toLocaleDateString('en-IN')} – ${userProfile?.name || 'Unknown Vendor'}`);
           const body = encodeURIComponent(bundle);
           const mailtoUrl = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
 
@@ -889,162 +939,77 @@ export default function VendorDashboardScreen() {
           </View>
         </View>
 
-        {/* Screenshot Prevention Notice */}
-        <View style={styles.screenshotNotice}>
-          <FontAwesome name="shield" size={14} color="#7c3aed" style={{ marginRight: 8 }} />
-          <Text style={styles.screenshotNoticeText}>
-            Screenshots are disabled. Pay ₹{EXPORT_CHARGE}/trip to export data.
-          </Text>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Vendor Information</Text>
-          
-          <Text style={styles.label}>Display Name</Text>
-          <TextInput style={styles.input} value={nameInput} onChangeText={setNameInput} placeholder="Your Business Name" maxLength={40} />
-
-          <Text style={styles.label}>WhatsApp Number</Text>
-          <TextInput style={styles.input} value={waInput} onChangeText={setWaInput} placeholder="+919876543210" keyboardType="phone-pad" maxLength={15} />
-
-          <Text style={styles.label}>Merchant UPI ID</Text>
-          <TextInput style={styles.input} value={upiInput} onChangeText={setUpiInput} placeholder="e.g., mybusiness@okicici" autoCapitalize="none" maxLength={50} />
-
-          <TouchableOpacity style={styles.saveButton} onPress={handleUpdateProfile}>
-            <Text style={styles.saveButtonText}>{t('vendor.updateProfile', 'Update Profile')}</Text>
-          </TouchableOpacity>
-
-          {/* Payment Gateway Settings */}
-          <View style={styles.paymentInfoBox}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <FontAwesome name="credit-card" size={16} color={colors.primary} style={{ marginRight: 8 }} />
-                <Text style={styles.paymentInfoTitle}>Online Payments</Text>
-              </View>
-              <View style={[
-                styles.paymentStatusBadge, 
-                { backgroundColor: userProfile?.paymentSettings?.enabled ? '#dcfce7' : '#fef3c7' }
-              ]}>
-                <Text style={[
-                  styles.paymentStatusText,
-                  { color: userProfile?.paymentSettings?.enabled ? '#166534' : '#92400e' }
-                ]}>
-                  {userProfile?.paymentSettings?.enabled ? 'ENABLED' : 'MANUAL'}
-                </Text>
-              </View>
-            </View>
-            
-            <Text style={styles.paymentInfoText}>
-              {userProfile?.paymentSettings?.enabled 
-                ? 'Travellers can pay online via Razorpay. You receive payments directly to your account.'
-                : 'Travellers will pay via UPI/WhatsApp. Set up Razorpay to accept online payments.'}
+        {/* Quick Overview Summary Chips */}
+        <View style={styles.overviewChipsRow}>
+          <View style={styles.overviewChip}>
+            <FontAwesome name="compass" size={12} color="#0284c7" />
+            <Text style={styles.overviewChipText}>{myTrips.length} Active Trips</Text>
+          </View>
+          <View style={[styles.overviewChip, { backgroundColor: '#fdf2f8', borderColor: '#fbcfe8' }]}>
+            <FontAwesome name="ticket" size={12} color="#be185d" />
+            <Text style={[styles.overviewChipText, { color: '#9d174d' }]}>{vendorBookings.length} Bookings</Text>
+          </View>
+          <View style={[styles.overviewChip, { backgroundColor: userProfile?.paymentSettings?.enabled ? '#f0fdf4' : '#fffbeb', borderColor: userProfile?.paymentSettings?.enabled ? '#bbf7d0' : '#fde68a' }]}>
+            <FontAwesome name="credit-card" size={12} color={userProfile?.paymentSettings?.enabled ? '#15803d' : '#b45309'} />
+            <Text style={[styles.overviewChipText, { color: userProfile?.paymentSettings?.enabled ? '#166534' : '#92400e' }]}>
+              {userProfile?.paymentSettings?.enabled ? 'Razorpay Active' : 'Manual UPI'}
             </Text>
-
-            {userProfile?.paymentSettings?.enabled && (
-              <View style={styles.paymentMethodsRow}>
-                <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>UPI</Text></View>
-                <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>Cards</Text></View>
-                <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>NetBanking</Text></View>
-                <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>Wallets</Text></View>
-              </View>
-            )}
-
-            <TouchableOpacity 
-              style={[styles.saveButton, { marginTop: 12, backgroundColor: userProfile?.paymentSettings?.enabled ? '#64748b' : '#00b0ff' }]}
-              onPress={() => setIsPaymentSetupModalVisible(true)}
-            >
-              <FontAwesome name="cog" size={14} color={colors.card} style={{ marginRight: 8 }} />
-              <Text style={styles.saveButtonText}>
-                {userProfile?.paymentSettings?.enabled ? 'Manage Payment Settings' : 'Set Up Razorpay'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Discount Codes Section */}
-          <View style={[styles.paymentInfoBox, { marginTop: 15, backgroundColor: '#f5f3ff', borderColor: '#ddd6fe' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-              <FontAwesome name="tag" size={16} color="#8b5cf6" style={{ marginRight: 8 }} />
-              <Text style={[styles.paymentInfoTitle, { color: '#6d28d9' }]}>Promo Codes</Text>
-            </View>
-            
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
-              <TextInput style={[styles.input, { flex: 2, marginBottom: 0 }]} value={newDiscountCode} onChangeText={setNewDiscountCode} placeholder="CODE (e.g. SUMMER10)" autoCapitalize="characters" />
-              <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} value={newDiscountPercent} onChangeText={setNewDiscountPercent} placeholder="%" keyboardType="numeric" />
-              <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} value={newDiscountMaxUses} onChangeText={setNewDiscountMaxUses} placeholder="Uses" keyboardType="numeric" />
-            </View>
-            
-            <TouchableOpacity style={[styles.saveButton, { backgroundColor: '#8b5cf6', marginTop: 0 }]} onPress={handleAddDiscountCode}>
-              <Text style={styles.saveButtonText}>Add Promo Code</Text>
-            </TouchableOpacity>
-
-            {userProfile?.discountCodes && userProfile.discountCodes.length > 0 && (
-              <View style={{ marginTop: 15, borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 10 }}>
-                {userProfile.discountCodes.map((code, idx) => (
-                  <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
-                    <View>
-                      <Text style={{ fontWeight: 'bold', color: '#4b5563' }}>{code.code} <Text style={{ color: '#059669' }}>({code.discountPercent}% OFF)</Text></Text>
-                      <Text style={{ fontSize: 12, color: '#6b7280' }}>{code.usedCount} / {code.maxUses} used</Text>
-                    </View>
-                    <TouchableOpacity onPress={() => handleRemoveDiscountCode(code.code)} style={{ padding: 5 }}>
-                      <FontAwesome name="trash" size={16} color={colors.danger} />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
           </View>
         </View>
 
-        {/* Tab Navigation */}
+        {/* 3-Tab Segmented Control */}
         <View style={styles.tabContainer}>
           <TouchableOpacity 
             style={[styles.tabBtn, activeTab === 'trips' && styles.tabBtnActive]} 
             onPress={() => setActiveTab('trips')}
           >
-            <Text style={[styles.tabText, activeTab === 'trips' && styles.tabTextActive]}>Your Trips</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <FontAwesome name="compass" size={14} color={activeTab === 'trips' ? colors.primary : '#64748b'} style={{ marginRight: 6 }} />
+              <Text style={[styles.tabText, activeTab === 'trips' && styles.tabTextActive]}>Trips ({myTrips.length})</Text>
+            </View>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tabBtn, activeTab === 'bookings' && styles.tabBtnActive]} 
             onPress={() => setActiveTab('bookings')}
           >
-            <Text style={[styles.tabText, activeTab === 'bookings' && styles.tabTextActive]}>Manage Bookings</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <FontAwesome name="ticket" size={14} color={activeTab === 'bookings' ? colors.primary : '#64748b'} style={{ marginRight: 6 }} />
+              <Text style={[styles.tabText, activeTab === 'bookings' && styles.tabTextActive]}>Bookings ({vendorBookings.length})</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tabBtn, activeTab === 'settings' && styles.tabBtnActive]} 
+            onPress={() => setActiveTab('settings')}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <FontAwesome name="sliders" size={14} color={activeTab === 'settings' ? colors.primary : '#64748b'} style={{ marginRight: 6 }} />
+              <Text style={[styles.tabText, activeTab === 'settings' && styles.tabTextActive]}>Settings</Text>
+            </View>
           </TouchableOpacity>
         </View>
 
-        {activeTab === 'bookings' && (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginHorizontal: 20, marginBottom: 20 }}>
-            <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#f0f9ff', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#bae6fd' }}>
-              <Text style={{ color: '#0369a1', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Total Revenue</Text>
-              <Text style={{ color: '#0c4a6e', fontSize: 20, fontWeight: 'bold' }}>₹{totalRevenue.toLocaleString('en-IN')}</Text>
-            </View>
-            <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#fdf4ff', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#fbcfe8' }}>
-              <Text style={{ color: '#86198f', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Bookings</Text>
-              <Text style={{ color: '#4a044e', fontSize: 20, fontWeight: 'bold' }}>{confirmedBookings.length}</Text>
-            </View>
-            <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#f0fdf4', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#bbf7d0' }}>
-              <Text style={{ color: '#166534', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Occupancy Rate</Text>
-              <Text style={{ color: '#14532d', fontSize: 20, fontWeight: 'bold' }}>{occupancyRate}%</Text>
-            </View>
-            <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#fffbeb', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#fde68a' }}>
-              <Text style={{ color: '#b45309', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Avg Ticket</Text>
-              <Text style={{ color: '#78350f', fontSize: 20, fontWeight: 'bold' }}>₹{avgTicketPrice.toLocaleString('en-IN')}</Text>
-            </View>
-          </View>
-        )}
-
-        {activeTab === 'trips' ? (
+        {/* TAB 1: TRIPS */}
+        {activeTab === 'trips' && (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-              <View>
+              <View style={{ flex: 1, minWidth: 120 }}>
                 <Text style={styles.sectionTitle}>{t('vendor.yourTrips', 'Your Trips')}</Text>
                 <Text style={styles.limitText}>{myTrips.length} / {LIMITS.MAX_TRIPS_PER_VENDOR} trips used</Text>
               </View>
-              <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+              <View style={styles.actionButtonGroup}>
                 <TouchableOpacity 
-                  style={[styles.addNewBtn, { backgroundColor: '#10b981' }]} 
+                  style={[styles.addNewBtn, { backgroundColor: '#10b981' }, isPublishingSample && styles.disabledBtn]} 
                   onPress={handleQuickCreateSampleTrip}
+                  disabled={isPublishingSample}
                 >
-                   <FontAwesome name="bolt" size={14} color={colors.card} />
-                   <Text style={styles.addNewBtnText}>1-Click Sample</Text>
+                   {isPublishingSample ? (
+                     <ActivityIndicator size="small" color={colors.card} />
+                   ) : (
+                     <FontAwesome name="bolt" size={14} color={colors.card} />
+                   )}
+                   <Text style={styles.addNewBtnText}>
+                     {isPublishingSample ? 'Publishing...' : '1-Click Sample'}
+                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={[styles.addNewBtn, { backgroundColor: '#8b5cf6' }]} 
@@ -1056,6 +1021,7 @@ export default function VendorDashboardScreen() {
                 <TouchableOpacity 
                   style={[styles.addNewBtn, myTrips.length >= LIMITS.MAX_TRIPS_PER_VENDOR && styles.disabledBtn]} 
                   onPress={startAddingNew}
+                  disabled={myTrips.length >= LIMITS.MAX_TRIPS_PER_VENDOR}
                 >
                    <FontAwesome name="plus" size={14} color={colors.card} />
                    <Text style={styles.addNewBtnText}>{t('vendor.addNewTrip', 'Add New')}</Text>
@@ -1065,17 +1031,36 @@ export default function VendorDashboardScreen() {
             
             {myTrips.length === 0 ? (
               <View style={styles.emptyStateContainer}>
-                <FontAwesome name="map-o" size={64} color={colors.border} />
-                <Text style={styles.emptyStateTitle}>No trips yet</Text>
-                <Text style={styles.emptyStateSubtitle}>Create your first trip listing or publish a ready sample trip in 2 seconds!</Text>
-                <View style={{ flexDirection: 'row', gap: 10, marginTop: 15 }}>
-                  <TouchableOpacity style={styles.emptyStateCta} onPress={startAddingNew}>
+                <View style={styles.emptyStateIconCircle}>
+                  <FontAwesome name="compass" size={40} color={colors.primary} />
+                </View>
+                <Text style={styles.emptyStateTitle}>No trips listed yet</Text>
+                <Text style={styles.emptyStateSubtitle}>
+                  Publish your first trip listing or launch an instantly ready sample weekend trek in 1 click!
+                </Text>
+                <View style={styles.emptyStateCtaContainer}>
+                  <TouchableOpacity 
+                    style={styles.emptyStateCta} 
+                    onPress={startAddingNew}
+                    activeOpacity={0.8}
+                  >
                     <FontAwesome name="plus" size={14} color={colors.card} style={{ marginRight: 8 }} />
                     <Text style={styles.emptyStateCtaText}>Create Custom Trip</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.emptyStateCta, { backgroundColor: '#10b981' }]} onPress={handleQuickCreateSampleTrip}>
-                    <FontAwesome name="bolt" size={14} color={colors.card} style={{ marginRight: 8 }} />
-                    <Text style={styles.emptyStateCtaText}>⚡ 1-Click Sample Trip</Text>
+                  <TouchableOpacity 
+                    style={[styles.emptyStateCta, { backgroundColor: '#10b981' }, isPublishingSample && { opacity: 0.7 }]} 
+                    onPress={handleQuickCreateSampleTrip}
+                    disabled={isPublishingSample}
+                    activeOpacity={0.8}
+                  >
+                    {isPublishingSample ? (
+                      <ActivityIndicator size="small" color={colors.card} style={{ marginRight: 8 }} />
+                    ) : (
+                      <FontAwesome name="bolt" size={14} color={colors.card} style={{ marginRight: 8 }} />
+                    )}
+                    <Text style={styles.emptyStateCtaText}>
+                      {isPublishingSample ? 'Publishing Sample...' : '1-Click Sample Trip'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1199,7 +1184,7 @@ export default function VendorDashboardScreen() {
                         style={{ 
                           paddingVertical: 6, 
                           paddingHorizontal: 10, 
-                          backgroundColor: paidTripExports.has(trip.id) ? '#8b5cf6' : '#f59e0b', 
+                          backgroundColor: '#0284c7', 
                           borderRadius: 6, 
                           flexDirection: 'row', 
                           alignItems: 'center',
@@ -1214,10 +1199,10 @@ export default function VendorDashboardScreen() {
                         {exportingTripId === trip.id ? (
                           <ActivityIndicator size="small" color={colors.card} style={{ marginRight: 4 }} />
                         ) : (
-                          <FontAwesome name={paidTripExports.has(trip.id) ? "download" : "rupee"} size={10} color={colors.card} style={{ marginRight: 4 }} />
+                          <FontAwesome name="file-text-o" size={10} color={colors.card} style={{ marginRight: 4 }} />
                         )}
                         <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 11 }}>
-                          {paidTripExports.has(trip.id) ? 'Export' : `₹${EXPORT_CHARGE}`}
+                          Export Data
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -1227,8 +1212,30 @@ export default function VendorDashboardScreen() {
               ))
             )}
           </View>
-        ) : (
+        )}
+
+        {/* TAB 2: BOOKINGS */}
+        {activeTab === 'bookings' && (
           <View style={styles.section}>
+            {/* Revenue Analytics Cards */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
+              <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#f0f9ff', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#bae6fd' }}>
+                <Text style={{ color: '#0369a1', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Total Revenue</Text>
+                <Text style={{ color: '#0c4a6e', fontSize: 20, fontWeight: 'bold' }}>₹{totalRevenue.toLocaleString('en-IN')}</Text>
+              </View>
+              <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#fdf4ff', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#fbcfe8' }}>
+                <Text style={{ color: '#86198f', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Bookings</Text>
+                <Text style={{ color: '#4a044e', fontSize: 20, fontWeight: 'bold' }}>{confirmedBookings.length}</Text>
+              </View>
+              <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#f0fdf4', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#bbf7d0' }}>
+                <Text style={{ color: '#166534', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Occupancy Rate</Text>
+                <Text style={{ color: '#14532d', fontSize: 20, fontWeight: 'bold' }}>{occupancyRate}%</Text>
+              </View>
+              <View style={{ flex: 1, minWidth: '45%', backgroundColor: '#fffbeb', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#fde68a' }}>
+                <Text style={{ color: '#b45309', fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Avg Ticket</Text>
+                <Text style={{ color: '#78350f', fontSize: 20, fontWeight: 'bold' }}>₹{avgTicketPrice.toLocaleString('en-IN')}</Text>
+              </View>
+            </View>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>Manage Bookings</Text>
               <TextInput 
@@ -1328,6 +1335,195 @@ export default function VendorDashboardScreen() {
                 </View>
               ))
             )}
+          </View>
+        )}
+
+        {/* TAB 3: SETTINGS & PROFILE */}
+        {activeTab === 'settings' && (
+          <View style={styles.section}>
+            {/* Card 1: Business Profile */}
+            <View style={styles.settingsGroupCard}>
+              <View style={styles.settingsGroupHeader}>
+                <FontAwesome name="building-o" size={18} color={colors.primary} style={{ marginRight: 8 }} />
+                <Text style={styles.settingsGroupTitle}>Business Profile</Text>
+              </View>
+              <Text style={styles.settingsGroupSubtitle}>
+                This information is displayed on your trips and public storefront.
+              </Text>
+
+              <Text style={styles.label}>Display Name</Text>
+              <TextInput 
+                style={styles.input} 
+                value={nameInput} 
+                onChangeText={setNameInput} 
+                placeholder="Your Business Name" 
+                maxLength={40} 
+              />
+
+              <Text style={styles.label}>WhatsApp Number (for bookings & traveller contact)</Text>
+              <TextInput 
+                style={styles.input} 
+                value={waInput} 
+                onChangeText={setWaInput} 
+                placeholder="+919876543210" 
+                keyboardType="phone-pad" 
+                maxLength={15} 
+              />
+
+              <Text style={styles.label}>Merchant UPI ID (for receiving manual payments)</Text>
+              <TextInput 
+                style={styles.input} 
+                value={upiInput} 
+                onChangeText={setUpiInput} 
+                placeholder="e.g., mybusiness@okicici" 
+                autoCapitalize="none" 
+                maxLength={50} 
+              />
+
+              <Text style={styles.label}>Instagram Profile URL (optional)</Text>
+              <TextInput 
+                style={styles.input} 
+                value={instaInput} 
+                onChangeText={setInstaInput} 
+                placeholder="https://instagram.com/yourhandle" 
+                autoCapitalize="none" 
+                maxLength={100} 
+              />
+
+              <Text style={styles.label}>Terms & Conditions</Text>
+              <TextInput 
+                style={[styles.input, { height: 100, textAlignVertical: 'top' }]} 
+                value={termsInput} 
+                onChangeText={setTermsInput} 
+                placeholder="Enter your standard trip terms and conditions..." 
+                multiline 
+              />
+
+              <TouchableOpacity style={styles.saveButton} onPress={handleUpdateProfile}>
+                <Text style={styles.saveButtonText}>{t('vendor.updateProfile', 'Update Profile')}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Card 2: Online Payments (Razorpay) */}
+            <View style={[styles.settingsGroupCard, { marginTop: 16 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <FontAwesome name="credit-card" size={18} color={colors.primary} style={{ marginRight: 8 }} />
+                  <Text style={styles.settingsGroupTitle}>Online Payments</Text>
+                </View>
+                <View style={[
+                  styles.paymentStatusBadge, 
+                  { backgroundColor: userProfile?.paymentSettings?.enabled ? '#dcfce7' : '#fef3c7' }
+                ]}>
+                  <Text style={[
+                    styles.paymentStatusText,
+                    { color: userProfile?.paymentSettings?.enabled ? '#166534' : '#92400e' }
+                  ]}>
+                    {userProfile?.paymentSettings?.enabled ? 'ENABLED' : 'MANUAL'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.paymentInfoText}>
+                {userProfile?.paymentSettings?.enabled 
+                  ? 'Travellers can pay online via Razorpay. You receive payments directly to your account.'
+                  : 'Travellers will pay via UPI/WhatsApp. Set up Razorpay to accept online payments.'}
+              </Text>
+
+              {userProfile?.paymentSettings?.enabled && (
+                <View style={styles.paymentMethodsRow}>
+                  <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>UPI</Text></View>
+                  <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>Cards</Text></View>
+                  <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>NetBanking</Text></View>
+                  <View style={styles.paymentMethodTag}><Text style={styles.paymentMethodTagText}>Wallets</Text></View>
+                </View>
+              )}
+
+              <TouchableOpacity 
+                style={[styles.saveButton, { marginTop: 14, backgroundColor: userProfile?.paymentSettings?.enabled ? '#64748b' : '#00b0ff' }]}
+                onPress={() => setIsPaymentSetupModalVisible(true)}
+              >
+                <FontAwesome name="cog" size={14} color={colors.card} style={{ marginRight: 8 }} />
+                <Text style={styles.saveButtonText}>
+                  {userProfile?.paymentSettings?.enabled ? 'Manage Payment Settings' : 'Set Up Razorpay'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Card 3: Promo Codes Section */}
+            <View style={[styles.settingsGroupCard, { marginTop: 16, backgroundColor: '#faf5ff', borderColor: '#e9d5ff' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                <FontAwesome name="tag" size={18} color="#8b5cf6" style={{ marginRight: 8 }} />
+                <Text style={[styles.settingsGroupTitle, { color: '#6d28d9' }]}>Promo Codes</Text>
+              </View>
+              <Text style={[styles.settingsGroupSubtitle, { color: '#7c3aed' }]}>
+                Offer exclusive percentage discounts to your travellers.
+              </Text>
+              
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                <TextInput style={[styles.input, { flex: 2, marginBottom: 0 }]} value={newDiscountCode} onChangeText={setNewDiscountCode} placeholder="CODE (e.g. SUMMER10)" autoCapitalize="characters" />
+                <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} value={newDiscountPercent} onChangeText={setNewDiscountPercent} placeholder="%" keyboardType="numeric" />
+                <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} value={newDiscountMaxUses} onChangeText={setNewDiscountMaxUses} placeholder="Uses" keyboardType="numeric" />
+              </View>
+              
+              <TouchableOpacity style={[styles.saveButton, { backgroundColor: '#8b5cf6', marginTop: 4 }]} onPress={handleAddDiscountCode}>
+                <Text style={styles.saveButtonText}>Add Promo Code</Text>
+              </TouchableOpacity>
+
+              {userProfile?.discountCodes && userProfile.discountCodes.length > 0 && (
+                <View style={{ marginTop: 15, borderTopWidth: 1, borderTopColor: '#e9d5ff', paddingTop: 10 }}>
+                  {userProfile.discountCodes.map((code, idx) => (
+                    <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' }}>
+                      <View>
+                        <Text style={{ fontWeight: 'bold', color: '#4b5563' }}>{code.code} <Text style={{ color: '#059669' }}>({code.discountPercent}% OFF)</Text></Text>
+                        <Text style={{ fontSize: 12, color: '#6b7280' }}>{code.usedCount} / {code.maxUses} used</Text>
+                      </View>
+                      <TouchableOpacity onPress={() => handleRemoveDiscountCode(code.code)} style={{ padding: 5 }}>
+                        <FontAwesome name="trash" size={16} color={colors.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Card 4: Storefront & Support Actions */}
+            <View style={[styles.settingsGroupCard, { marginTop: 16 }]}>
+              <View style={styles.settingsGroupHeader}>
+                <FontAwesome name="share-alt" size={18} color={colors.primary} style={{ marginRight: 8 }} />
+                <Text style={styles.settingsGroupTitle}>Public Storefront & Support</Text>
+              </View>
+              
+              <TouchableOpacity 
+                style={[styles.actionButton, { marginTop: 10 }]}
+                onPress={() => {
+                  const storeUrl = `https://abtohghoomle.com/vendor.html?id=${userProfile.id}`;
+                  (Clipboard as any).setString(storeUrl);
+                  Alert.alert('Copied Storefront Link!', `Share your vendor profile with travellers:\n${storeUrl}`);
+                }}
+              >
+                <FontAwesome name="globe" size={16} color={colors.primary} style={{ marginRight: 10 }} />
+                <Text style={[styles.actionButtonText, { color: colors.primary }]}>Copy Web Storefront Link</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.actionButton}
+                onPress={() => {
+                  Linking.openURL('mailto:support@abtohghoomle.com?subject=Vendor%20Support%20Request');
+                }}
+              >
+                <FontAwesome name="envelope-o" size={16} color={colors.textSecondary} style={{ marginRight: 10 }} />
+                <Text style={styles.actionButtonText}>Email Support</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.actionButton, { borderColor: '#fee2e2', backgroundColor: '#fff5f5' }]}
+                onPress={handleLogout}
+              >
+                <FontAwesome name="sign-out" size={16} color="#e53e3e" style={{ marginRight: 10 }} />
+                <Text style={[styles.actionButtonText, { color: '#e53e3e' }]}>Log Out of Vendor Account</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </View>
@@ -2098,18 +2294,39 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     lineHeight: 22,
     marginBottom: 24,
   },
+  emptyStateIconCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#e0f7ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyStateCtaContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+  },
   emptyStateCta: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 100,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    minWidth: 150,
+    flexGrow: 1,
+    maxWidth: 280,
   },
   emptyStateCtaText: {
     color: colors.card,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
   modalContainer: {
     flex: 1,
@@ -2355,22 +2572,62 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     lineHeight: 20,
   },
   
-  // Screenshot prevention notice
-  screenshotNotice: {
+  // Overview chips & action group
+  overviewChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  overviewChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f3e8ff',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginBottom: 15,
+    gap: 6,
+    backgroundColor: '#f0f9ff',
     borderWidth: 1,
-    borderColor: '#c4b5fd',
+    borderColor: '#bae6fd',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  screenshotNoticeText: {
+  overviewChipText: {
     fontSize: 12,
-    color: '#6b21a8',
-    fontWeight: '500',
-    flex: 1,
+    fontWeight: '600',
+    color: '#0369a1',
+  },
+  actionButtonGroup: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+
+  // Settings tab card styles
+  settingsGroupCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  settingsGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  settingsGroupTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.textPrimary,
+  },
+  settingsGroupSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: 14,
   },
 });

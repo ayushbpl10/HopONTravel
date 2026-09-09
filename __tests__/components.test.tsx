@@ -37,13 +37,13 @@ describe('OfflineIndicator Component', () => {
 
   it('renders nothing when online', () => {
     mockUseAppContext.mockReturnValue({ isOnline: true });
-    const { toJSON } = render(<OfflineIndicator />);
+    const { toJSON } = render(<OfflineIndicator />) as any;
     expect(toJSON()).toBeNull();
   });
 
   it('renders offline message when offline', () => {
     mockUseAppContext.mockReturnValue({ isOnline: false });
-    const { getByText } = render(<OfflineIndicator />);
+    const { getByText } = render(<OfflineIndicator />) as any;
     expect(getByText('No internet connection')).toBeTruthy();
   });
 });

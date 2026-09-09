@@ -52,7 +52,7 @@ export default function VendorLoginScreen() {
           
           <Text style={styles.title}>Vendor Portal</Text>
           <Text style={styles.subtitle}>
-            Manage your trips, handle bookings, and grow your adventure business with HopON Travel!
+            Manage your trips, handle bookings, and grow your adventure business with Ab Toh Ghoom Le!
           </Text>
 
           <TouchableOpacity 

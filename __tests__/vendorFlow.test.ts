@@ -338,11 +338,11 @@ describe('HopON Travel Core Workflows', () => {
 
     it('4. User Login: should mock user login fallback logic', async () => {
       // Simulate AppContext loginWithGoogle logic for traveller
-      const role = 'traveller';
+      let role: 'traveller' | 'vendor' = 'traveller';
       const mockResponse = { type: 'success', data: { user: { email: 'user@example.com', name: null }, idToken: 'token_123' } };
       
       const email = mockResponse.data.user.email;
-      const name = mockResponse.data.user.name || (role === 'vendor' ? 'Vendor' : 'Traveller');
+      const name = mockResponse.data.user.name || ((role as string) === 'vendor' ? 'Vendor' : 'Traveller');
       
       expect(email).toBe('user@example.com');
       expect(name).toBe('Traveller'); // Fallback correctly applied

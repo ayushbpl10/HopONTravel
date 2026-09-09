@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import { GoogleAuthProvider, signInAnonymously, signInWithCredential } from 'firebase/auth';
+import { GoogleAuthProvider, signInAnonymously, signInWithCredential, signOut } from 'firebase/auth';
 import {
     addDoc,
     arrayUnion,
@@ -101,7 +101,7 @@ interface AppContextType {
   logout: () => Promise<void>;
   updateUserProfile: (updates: Partial<UserProfile>) => void;
   updateTrip: (tripId: string, updates: Partial<Trip>) => void;
-  addTrip: (trip: Omit<Trip, 'id'>) => Promise<void>;
+  addTrip: (trip: Omit<Trip, 'id'>) => Promise<Trip | void>;
   deleteTrip: (tripId: string) => Promise<void>;
   bookTrip: (booking: Omit<Booking, 'id'>) => Promise<void>;
   updateBookingStatus: (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled' | 'failed') => Promise<void>;
@@ -478,6 +478,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (error) {
       console.error(error);
     }
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Firebase signout error:', error);
+    }
     setUserProfile(null);
     Logger.setUserContext(null, null);
     await AsyncStorage.removeItem('userProfile');
@@ -511,24 +516,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateTrip = async (tripId: string, updates: Partial<Trip>) => {
     const tripRef = doc(db, 'trips', tripId);
     await updateDoc(tripRef, updates);
+    setTrips(prev => {
+      const updated = prev.map(t => t.id === tripId ? { ...t, ...updates } : t);
+      AsyncStorage.setItem('cached_trips', JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
   };
 
-  const addTrip = async (trip: Omit<Trip, 'id'>) => {
-    // Include vendor's payment settings in the trip
-    const tripWithPaymentConfig = {
+  const addTrip = async (trip: Omit<Trip, 'id'>): Promise<Trip> => {
+    // Ensure Firebase Auth is established (vendor or anonymous session)
+    if (!auth.currentUser) {
+      try {
+        await signInAnonymously(auth);
+      } catch (authErr) {
+        console.warn('Authentication fallback for trip creation:', authErr);
+      }
+    }
+
+    // Enforce default status and include vendor's payment settings
+    const tripWithPaymentConfig: any = {
+      isPublished: true,
       ...trip,
+      status: trip.status || 'published',
       vendorPaymentConfig: userProfile?.paymentSettings ? {
         enabled: userProfile.paymentSettings.enabled,
         gateway: userProfile.paymentSettings.gateway,
         razorpayKeyId: userProfile.paymentSettings.razorpayKeyId,
       } : undefined,
     };
-    await addDoc(collection(db, 'trips'), tripWithPaymentConfig);
+    const docRef = await addDoc(collection(db, 'trips'), tripWithPaymentConfig);
+    const createdTrip = { id: docRef.id, ...tripWithPaymentConfig } as Trip;
+
+    // Update local state immediately so UI and vendor dashboard reflect changes in real-time
+    setTrips(prev => {
+      const next = [createdTrip, ...prev.filter(t => t.id !== createdTrip.id)];
+      AsyncStorage.setItem('cached_trips', JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+
+    return createdTrip;
   };
 
   const deleteTrip = async (tripId: string) => {
     const tripRef = doc(db, 'trips', tripId);
     await deleteDoc(tripRef);
+    setTrips(prev => {
+      const next = prev.filter(t => t.id !== tripId);
+      AsyncStorage.setItem('cached_trips', JSON.stringify(next)).catch(() => {});
+      return next;
+    });
   };
 
   const bookTrip = async (booking: Omit<Booking, 'id'>) => {
