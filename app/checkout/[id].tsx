@@ -2,15 +2,17 @@ import { FontAwesome } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAppContext } from '../../context/AppContext';
 import { initiatePayment, isPaymentGatewayEnabled, PaymentResult, VendorPaymentConfig } from '../../services/paymentService';
+import { DEFAULT_TERMS_AND_CONDITIONS } from '../../data/defaultTerms';
 
 export default function CheckoutScreen() {
   const { 
     id, batchId, packageName, seats, totalPrice, tripTitle, 
     vendorName, vendorWhatsApp, vendorUPI,
-    vendorPaymentEnabled, vendorPaymentGateway, vendorRazorpayKey
+    vendorPaymentEnabled, vendorPaymentGateway, vendorRazorpayKey,
+    termsAndConditions
   } = useLocalSearchParams();
   const { bookTrip } = useAppContext();
   const { t } = useTranslation();
@@ -29,10 +31,14 @@ export default function CheckoutScreen() {
   const [email, setEmail] = useState('');
   const [numTravellers, setNumTravellers] = useState(seats?.toString() || '1');
   const [consent, setConsent] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const [captchaNum1] = useState(Math.floor(Math.random() * 10) + 1);
   const [captchaNum2] = useState(Math.floor(Math.random() * 10) + 1);
   const [captchaAnswer, setCaptchaAnswer] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const activeTermsText = (termsAndConditions as string) || DEFAULT_TERMS_AND_CONDITIONS;
 
   const handleProceed = async () => {
     if (!name || !phone || !email || !numTravellers) {
@@ -41,6 +47,10 @@ export default function CheckoutScreen() {
     }
     if (!consent) {
       Alert.alert('Consent Required', 'You must accept the risks involved.');
+      return;
+    }
+    if (!termsAccepted) {
+      Alert.alert('Terms & Conditions Required', 'You must accept the Terms & Conditions to proceed.');
       return;
     }
     if (parseInt(captchaAnswer, 10) !== captchaNum1 + captchaNum2) {
@@ -217,6 +227,47 @@ export default function CheckoutScreen() {
         </View>
       </View>
 
+      {/* Terms & Conditions Card */}
+      <View style={[styles.consentCard, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}>
+        <View style={styles.consentRow}>
+          <Switch value={termsAccepted} onValueChange={setTermsAccepted} trackColor={{ true: '#22c55e' }} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.consentText, { color: '#14532d' }]}>
+              I have read and agree to the <Text style={{ fontWeight: 'bold', textDecorationLine: 'underline' }} onPress={() => setShowTermsModal(true)}>Terms & Conditions & Disclaimer</Text>.
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity style={{ marginTop: 8, alignSelf: 'flex-start' }} onPress={() => setShowTermsModal(true)}>
+          <Text style={{ fontSize: 12, color: '#166534', fontWeight: 'bold' }}>📄 View Full Terms & Conditions</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Terms Modal */}
+      <Modal visible={showTermsModal} transparent animationType="slide">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 16, width: '100%', maxHeight: '80%', padding: 20 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1e293b' }}>Terms & Conditions</Text>
+              <TouchableOpacity onPress={() => setShowTermsModal(false)}>
+                <FontAwesome name="times-circle" size={24} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ marginBottom: 15 }}>
+              <Text style={{ fontSize: 13, color: '#334155', lineHeight: 20 }}>{activeTermsText}</Text>
+            </ScrollView>
+            <TouchableOpacity 
+              style={{ backgroundColor: '#22c55e', padding: 14, borderRadius: 10, alignItems: 'center' }}
+              onPress={() => {
+                setTermsAccepted(true);
+                setShowTermsModal(false);
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>I Accept Terms & Conditions</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Payment Info */}
       {hasOnlinePayment ? (
         <View style={styles.paymentInfoCard}>
@@ -241,10 +292,10 @@ export default function CheckoutScreen() {
       <TouchableOpacity 
         style={[
           styles.btn, 
-          (!consent || !name || !phone || !email || !captchaAnswer || isProcessing) ? styles.btnDisabled : null
+          (!consent || !termsAccepted || !name || !phone || !email || !captchaAnswer || isProcessing) ? styles.btnDisabled : null
         ]} 
         onPress={handleProceed}
-        disabled={!consent || !name || !phone || !email || !captchaAnswer || isProcessing}
+        disabled={!consent || !termsAccepted || !name || !phone || !email || !captchaAnswer || isProcessing}
       >
         {isProcessing ? (
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>

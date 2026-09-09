@@ -21,16 +21,23 @@ import { db } from '../config/firebase';
 import { openRazorpayCheckout, RazorpayCheckoutResult } from './razorpayCheckout';
 
 // =====================================================
-// PLATFORM'S RAZORPAY KEY
+// PLATFORM'S RAZORPAY KEY & PRICING
 // =====================================================
-// This is Ab Toh Ghoom Le's own Razorpay account
-// Money from export fees goes HERE
-const PLATFORM_RAZORPAY_KEY = Constants.expoConfig?.extra?.platformRazorpayKey || 'rzp_test_TWSNTBjCjlxWVy';
+// Dynamic Key fetched from Firestore doc 'config/platform' -> field 'platformRazorpayKey'
+const DEFAULT_PLATFORM_RAZORPAY_KEY = Constants.expoConfig?.extra?.platformRazorpayKey || 'rzp_test_TWSNTBjCjlxWVy';
+export const EXPORT_CHARGE = 1; // ₹1 per trip export
 
-// =====================================================
-// PRICING
-// =====================================================
-export const EXPORT_CHARGE = 10; // ₹10 per trip export
+export const getPlatformRazorpayKey = async (): Promise<string> => {
+  try {
+    const configSnap = await getDoc(doc(db, 'config', 'platform'));
+    if (configSnap.exists() && configSnap.data()?.platformRazorpayKey) {
+      return configSnap.data().platformRazorpayKey;
+    }
+  } catch (e) {
+    console.log('Failed to fetch platform Razorpay key from Firestore, using default fallback', e);
+  }
+  return DEFAULT_PLATFORM_RAZORPAY_KEY;
+};
 
 // =====================================================
 // TYPES
@@ -63,9 +70,10 @@ export const chargeExportFee = async (
   vendorPhone: string,
   vendorName: string
 ): Promise<PlatformPaymentResult> => {
+  const activeKey = await getPlatformRazorpayKey();
+
   // Validate platform key
-  if (!PLATFORM_RAZORPAY_KEY || !PLATFORM_RAZORPAY_KEY.startsWith('rzp_')) {
-    // In development, allow free export for testing
+  if (!activeKey || !activeKey.startsWith('rzp_')) {
     if (__DEV__) {
       console.log('[DEV] Platform key not configured, allowing free export');
       return { success: true, paymentId: `dev_${Date.now()}` };
@@ -75,9 +83,9 @@ export const chargeExportFee = async (
 
   // Open Razorpay checkout with PLATFORM's key
   const result: RazorpayCheckoutResult = await openRazorpayCheckout({
-    razorpayKey: PLATFORM_RAZORPAY_KEY, // <-- PLATFORM's key, NOT vendor's
+    razorpayKey: activeKey,
     amount: EXPORT_CHARGE,
-    name: 'Ab Toh Ghoom Le', // Platform name
+    name: 'Ab Toh Ghoom Le',
     description: `Export: ${tripTitle}`,
     prefill: {
       name: vendorName,
@@ -88,7 +96,7 @@ export const chargeExportFee = async (
       type: 'export_fee',
       trip_id: tripId,
     },
-    theme: { color: '#8b5cf6' }, // Purple for platform payments
+    theme: { color: '#8b5cf6' },
   });
 
   return {

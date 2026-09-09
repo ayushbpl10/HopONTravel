@@ -7,7 +7,7 @@ import { getDistance } from 'geolib';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme, ThemeColors } from '../../context/ThemeContext';
 import { useTranslation } from 'react-i18next';
-import { Alert, Dimensions, Linking, Modal, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Clipboard, Dimensions, Linking, Modal, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import TripMap from '../../components/TripMap';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -357,6 +357,42 @@ export default function TripDetailScreen() {
             <Text style={styles.date}>{trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : 'TBD'}</Text>
           </View>
           <Text style={styles.price}>₹{basePrice}</Text>
+        </View>
+
+        {/* Vendor Profile & Share Action Bar */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+          <TouchableOpacity 
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,184,0,0.12)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, borderWidth: 1, borderColor: 'rgba(255,184,0,0.3)' }}
+            onPress={() => router.push(`/vendor/${trip.vendorId || trip.vendorName}` as any)}
+          >
+            <FontAwesome name="check-circle" size={14} color="#3b82f6" style={{ marginRight: 6 }} />
+            <Text style={{ color: colors.textPrimary, fontWeight: '600', fontSize: 13 }}>
+              Organized by <Text style={{ color: colors.primary, fontWeight: '800' }}>{trip.vendorName}</Text>
+            </Text>
+            <FontAwesome name="chevron-right" size={10} color={colors.primary} style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity 
+              style={{ backgroundColor: colors.background, padding: 8, paddingHorizontal: 12, borderRadius: 100, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+              onPress={handleShareTrip}
+            >
+              <FontAwesome name="share-alt" size={14} color={colors.primary} />
+              <Text style={{ color: colors.textPrimary, fontSize: 12, fontWeight: '700' }}>Share</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={{ backgroundColor: colors.background, padding: 8, paddingHorizontal: 12, borderRadius: 100, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+              onPress={() => {
+                const webUrl = `https://abtohghoomle.com/trip.html?id=${trip.id}`;
+                Clipboard.setString(webUrl);
+                Alert.alert('Copied!', 'Web trip link copied to clipboard.');
+              }}
+            >
+              <FontAwesome name="globe" size={14} color="#3b82f6" />
+              <Text style={{ color: colors.textPrimary, fontSize: 12, fontWeight: '700' }}>Web Link</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {trip.batches && trip.batches.length > 0 && trip.tripStatus !== 'started' && trip.tripStatus !== 'completed' && (

@@ -3,13 +3,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, doc, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { useTheme, ThemeColors } from '../context/ThemeContext';
-import { ActivityIndicator, Alert, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Clipboard, Linking, Modal, Platform, ScrollView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import OllieLoading from '../components/OllieLoading';
 import { db } from '../config/firebase';
 import { useAppContext, VendorPaymentSettings } from '../context/AppContext';
+import { useTheme, ThemeColors } from '../context/ThemeContext';
 import { Trip } from '../data/trips';
 import { PaymentGateway } from '../services/paymentService';
 import { EXPORT_CHARGE, hasExportAccess, initiateExportPayment, recordExportPayment } from '../services/platformPaymentService';
@@ -21,6 +21,8 @@ import { uploadImage } from '../utils/uploadImage';
 
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTranslation } from 'react-i18next';
+import { TRIP_TEMPLATES, TripTemplate } from '../data/templates';
+import { DEFAULT_TERMS_AND_CONDITIONS } from '../data/defaultTerms';
 
 // Configuration for limits
 const LIMITS = {
@@ -40,19 +42,38 @@ export default function VendorDashboardScreen() {
   const [upiInput, setUpiInput] = useState(userProfile?.upiId || '');
   const [waInput, setWaInput] = useState(userProfile?.whatsappNumber || '');
   const [nameInput, setNameInput] = useState(userProfile?.name || '');
+  const [instaInput, setInstaInput] = useState(userProfile?.instagramUrl || '');
+  const [termsInput, setTermsInput] = useState(userProfile?.termsAndConditions || DEFAULT_TERMS_AND_CONDITIONS);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [activeTab, setActiveTab] = useState<'trips' | 'bookings'>('trips');
   const [bookingSearch, setBookingSearch] = useState('');
   const [selectedBookings, setSelectedBookings] = useState<Set<string>>(new Set());
   const { t } = useTranslation();
-  
+
   // Edit/Add form states
   const [editTitle, setEditTitle] = useState('');
   const [editPrice, setEditPrice] = useState('₹');
   const [editDesc, setEditDesc] = useState('');
   const [editCategory, setEditCategory] = useState('Trekking');
-  const [editDestination, setEditDestination] = useState('Pune');
+  const [editDestination, setEditDestination] = useState('Pune');  
+  
+  const handleApplyTemplate = (tpl: TripTemplate) => {
+    const d = tpl.templateData;
+    setEditTitle(d.title || '');
+    setEditPrice(d.packages && d.packages.length > 0 ? `₹${d.packages[0].price}` : '₹999');
+    setEditDesc(d.description || '');
+    setEditCategory(d.category || 'Trekking');
+    setEditDestination(d.destination || 'Pune');
+    setEditPickupPoints(d.pickupPoints || []);
+    setEditTotalSeats(d.batches && d.batches.length > 0 ? d.batches[0].totalSeats.toString() : '20');
+    setEditBookedSeats(d.batches && d.batches.length > 0 ? d.batches[0].bookedSeats.toString() : '0');
+    setEditImages(d.images || []);
+    setEditingTrip(null);
+    setIsAddingNew(true);
+    Alert.alert('Template Applied! 🚀', `Pre-filled form with "${tpl.name}". Adjust any details and tap Publish Trip!`);
+  };
+
   const [editStartDate, setEditStartDate] = useState(new Date());
   const [editEndDate, setEditEndDate] = useState(new Date());
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
@@ -86,6 +107,22 @@ export default function VendorDashboardScreen() {
   const [newDiscountPercent, setNewDiscountPercent] = useState('10');
   const [newDiscountMaxUses, setNewDiscountMaxUses] = useState('50');
 
+  // Export states
+  const [paidTripExports, setPaidTripExports] = useState<Set<string>>(new Set());
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportingTripId, setExportingTripId] = useState<string | null>(null);
+
+  // Enable screenshot prevention for vendor dashboard
+  useScreenshotPrevention(userProfile?.role === 'vendor');
+
+  useEffect(() => {
+    if (userProfile?.paymentSettings) {
+      setPaymentEnabled(userProfile.paymentSettings.enabled);
+      setPaymentGateway(userProfile.paymentSettings.gateway);
+      setRazorpayKeyId(userProfile.paymentSettings.razorpayKeyId || '');
+    }
+  }, [userProfile?.paymentSettings]);
+
   const handleAddDiscountCode = () => {
     if (!newDiscountCode.trim()) return;
     const codes = userProfile?.discountCodes || [];
@@ -111,41 +148,6 @@ export default function VendorDashboardScreen() {
     updateUserProfile({ discountCodes: codes.filter(c => c.code !== codeToRemove) });
   };
 
-  // Export states
-  const [paidTripExports, setPaidTripExports] = useState<Set<string>>(new Set());
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportingTripId, setExportingTripId] = useState<string | null>(null);
-
-  // Enable screenshot prevention for vendor dashboard
-  useScreenshotPrevention(userProfile?.role === 'vendor');
-
-  useEffect(() => {
-    // Update payment states when userProfile changes
-    if (userProfile?.paymentSettings) {
-      setPaymentEnabled(userProfile.paymentSettings.enabled);
-      setPaymentGateway(userProfile.paymentSettings.gateway);
-      setRazorpayKeyId(userProfile.paymentSettings.razorpayKeyId || '');
-    }
-  }, [userProfile?.paymentSettings]);
-
-  useEffect(() => {
-    const loadAiSettings = async () => {
-      try {
-        const savedProvider = await AsyncStorage.getItem('ai_provider');
-        const savedKey = await AsyncStorage.getItem('ai_api_key');
-        if (savedProvider === 'gemini' || savedProvider === 'openai') {
-          setAiProvider(savedProvider as AIProvider);
-        }
-        if (savedKey) {
-          setApiKey(savedKey);
-        }
-      } catch (e) {
-        console.error("Failed to load AI settings", e);
-      }
-    };
-    loadAiSettings();
-  }, []);
-
   const handleLogin = async () => {
     await loginWithGoogle('vendor');
   };
@@ -162,7 +164,9 @@ export default function VendorDashboardScreen() {
     updateUserProfile({ 
       upiId: upiInput, 
       whatsappNumber: waInput,
-      name: nameInput
+      name: nameInput,
+      instagramUrl: instaInput,
+      termsAndConditions: termsInput,
     });
     Alert.alert('Success', 'Profile updated successfully.');
   };
@@ -173,7 +177,6 @@ export default function VendorDashboardScreen() {
   };
 
   const handleSavePaymentSettings = async () => {
-    // Validate Razorpay key format if enabled
     if (paymentEnabled && paymentGateway === 'razorpay') {
       if (!razorpayKeyId) {
         Alert.alert('Missing Key', 'Please enter your Razorpay Key ID.');
@@ -224,7 +227,8 @@ export default function VendorDashboardScreen() {
   };
 
   const handleDuplicateTrip = (trip: Trip) => {
-    if (myTrips.length >= LIMITS.MAX_TRIPS_PER_VENDOR) {
+    const myTripsCount = trips.filter(t => t.vendorId === userProfile?.id).length;
+    if (myTripsCount >= LIMITS.MAX_TRIPS_PER_VENDOR) {
       Alert.alert('Limit Reached', `You can only have up to ${LIMITS.MAX_TRIPS_PER_VENDOR} active trip listings.`);
       return;
     }
@@ -244,7 +248,69 @@ export default function VendorDashboardScreen() {
     Alert.alert('Duplicated', 'Trip copied! Update the dates and publish.');
   };
 
-  // Handle export with payment
+  const handleTogglePublish = async (trip: Trip) => {
+    try {
+      const current = (trip as any).isPublished ?? true;
+      const newStatus = !current;
+      await updateTrip(trip.id, { isPublished: newStatus } as any);
+      Alert.alert('Status Updated', `Trip "${trip.title}" is now ${newStatus ? 'Live / Published' : 'Draft / Unpublished'}.`);
+    } catch (e: any) {
+      console.error('Toggle publish error:', e);
+      Alert.alert('Error', 'Could not update published status.');
+    }
+  };
+
+  const handleQuickCreateSampleTrip = async () => {
+    if (!userProfile) return;
+    try {
+      const sampleTpl = TRIP_TEMPLATES[0]; // Harishchandragad & Kokankada
+      const sample = sampleTpl.templateData;
+      const newTripData = {
+        title: sample.title || 'Harishchandragad & Kokankada Trek',
+        description: sample.description || '',
+        vendorId: userProfile.id,
+        vendorName: userProfile.name || 'Verified Vendor',
+        vendorWhatsApp: userProfile.whatsappNumber || '',
+        vendorUPI: userProfile.upiId ? [userProfile.upiId] : [],
+        vendorInstagram: userProfile.instagramUrl || '',
+        termsAndConditions: userProfile.termsAndConditions || '',
+        category: sample.category || 'Trekking',
+        destination: sample.destination || 'Harishchandragad',
+        tripStatus: 'upcoming',
+        isPublished: true,
+        batches: sample.batches || [{ id: 'b1', dateDuration: '05 Sep - 06 Sep', totalSeats: 20, bookedSeats: 0 }],
+        packages: sample.packages || [{ name: 'Base Package', price: 999 }],
+        inclusions: sample.inclusions || [],
+        exclusions: sample.exclusions || [],
+        pickupPoints: sample.pickupPoints || [],
+        structuredItinerary: sample.structuredItinerary || [],
+        images: sample.images || [],
+        createdAt: new Date().toISOString(),
+      };
+      await addTrip(newTripData as any);
+      Alert.alert('🎉 Published in 2 Seconds!', `Sample Trip "${newTripData.title}" created & published live!`);
+    } catch (err: any) {
+      console.error('Error quick publishing sample trip:', err);
+      Alert.alert('Error', 'Could not quick-publish sample trip.');
+    }
+  };
+
+  const proceedWithExport = async (trip: Trip) => {
+    const tripBookings = vendorBookings.filter(b => b.tripId === trip.id);
+    if (tripBookings.length === 0) {
+      Alert.alert('No Data', 'No bookings found for this trip.');
+      return;
+    }
+    const exportData: ExportData = {
+      trip,
+      bookings: tripBookings,
+      exportDate: new Date()
+    };
+    showExportDialog(exportData, () => {
+      // Export complete callback
+    });
+  };
+
   const handleExportData = async (trip: Trip) => {
     if (!userProfile) return;
     
@@ -252,17 +318,14 @@ export default function VendorDashboardScreen() {
     setIsExporting(true);
 
     try {
-      // Check if already paid for this trip
       const hasPaid = paidTripExports.has(trip.id) || await hasExportAccess(userProfile.id, trip.id);
       
       if (hasPaid) {
-        // Already paid, proceed with export
         await proceedWithExport(trip);
         setIsExporting(false);
         setExportingTripId(null);
       } else {
-        // Need to pay first - show dialog (loading state managed in callbacks)
-        setIsExporting(false); // Stop spinner while showing dialog
+        setIsExporting(false);
         setExportingTripId(null);
         
         Alert.alert(
@@ -286,11 +349,8 @@ export default function VendorDashboardScreen() {
                   );
                   
                   if (result.success && result.paymentId) {
-                    // Record payment
                     await recordExportPayment(userProfile.id, trip.id, result.paymentId);
                     setPaidTripExports(prev => new Set([...prev, trip.id]));
-                    
-                    // Proceed with export
                     await proceedWithExport(trip);
                   } else {
                     Alert.alert('Payment Failed', result.error || 'Could not process payment. Please try again.');
@@ -315,26 +375,6 @@ export default function VendorDashboardScreen() {
     }
   };
 
-  const proceedWithExport = async (trip: Trip) => {
-    // Get bookings for this trip
-    const tripBookings = vendorBookings.filter(b => b.tripId === trip.id);
-    
-    if (tripBookings.length === 0) {
-      Alert.alert('No Data', 'No bookings found for this trip.');
-      return;
-    }
-    
-    const exportData: ExportData = {
-      trip,
-      bookings: tripBookings,
-      exportDate: new Date(),
-    };
-    
-    showExportDialog(exportData, () => {
-      Alert.alert('Success', 'Data exported successfully!');
-    });
-  };
-
   const startEditing = (trip: Trip) => {
     setEditingTrip(trip);
     setIsAddingNew(false);
@@ -343,20 +383,18 @@ export default function VendorDashboardScreen() {
     setEditDesc(trip.description);
     setEditCategory(trip.category || 'Trekking');
     setEditDestination(trip.destination || 'Pune');
-    
-    // Parse existing date roughly, or use current date
     setEditStartDate(new Date());
     setEditEndDate(new Date(Date.now() + 86400000 * 2));
     setEditPickupPoints(trip.pickupPoints || []);
     setEditStructuredItinerary(trip.structuredItinerary || []);
-
     setEditTotalSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].totalSeats.toString() : '0');
     setEditBookedSeats(trip.batches && trip.batches.length > 0 ? trip.batches[0].bookedSeats.toString() : '0');
     setEditImages((trip.images || []).filter(img => img && typeof img === 'string' && img.trim() !== ''));
   };
 
   const startAddingNew = () => {
-    if (trips.length >= LIMITS.MAX_TRIPS_PER_VENDOR) {
+    const myTripsCount = trips.filter(t => t.vendorId === userProfile?.id).length;
+    if (myTripsCount >= LIMITS.MAX_TRIPS_PER_VENDOR) {
       Alert.alert('Limit Reached', `You can only have up to ${LIMITS.MAX_TRIPS_PER_VENDOR} active trip listings on the free plan.`);
       return;
     }
@@ -377,7 +415,8 @@ export default function VendorDashboardScreen() {
   };
 
   const startAddingFromParsed = (trip: Partial<Trip>) => {
-    if (trips.length >= LIMITS.MAX_TRIPS_PER_VENDOR) {
+    const myTripsCount = trips.filter(t => t.vendorId === userProfile?.id).length;
+    if (myTripsCount >= LIMITS.MAX_TRIPS_PER_VENDOR) {
       Alert.alert('Limit Reached', `You can only have up to ${LIMITS.MAX_TRIPS_PER_VENDOR} active trip listings on the free plan.`);
       return;
     }
@@ -389,7 +428,6 @@ export default function VendorDashboardScreen() {
     setEditCategory(trip.category || 'Trekking');
     setEditDestination(trip.destination || 'Pune');
     
-    // Attempt to parse start date
     let startDate = new Date();
     if (trip.batches && trip.batches.length > 0) {
       const match = trip.batches[0].dateDuration.match(/(\d{1,2})/);
@@ -828,7 +866,18 @@ export default function VendorDashboardScreen() {
           <View>
             <Text style={styles.welcomeText}>{t('vendor.welcome', 'Welcome')}, {userProfile.name}</Text>
             <Text style={styles.emailText}>{userProfile.email}</Text>
-
+            <TouchableOpacity 
+              style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,184,0,0.15)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100, marginTop: 4, alignSelf: 'flex-start' }}
+              onPress={() => {
+                const storeUrl = `https://abtohghoomle.com/vendor.html?id=${userProfile.id}`;
+                (Clipboard as any).setString(storeUrl);
+                Alert.alert('Copied Storefront Link!', `Share your vendor profile with travellers:\n${storeUrl}`);
+              }}
+            >
+              <FontAwesome name="globe" size={12} color="#FFB800" style={{ marginRight: 4 }} />
+              <Text style={{ color: '#FFB800', fontSize: 11, fontWeight: '700' }}>Storefront Web Link</Text>
+              <FontAwesome name="copy" size={10} color="#FFB800" style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
           </View>
           <View style={{ flexDirection: 'row', gap: 15, alignItems: 'center' }}>
             <TouchableOpacity onPress={() => router.push('/my-bookings' as any)}>
@@ -985,140 +1034,199 @@ export default function VendorDashboardScreen() {
         {activeTab === 'trips' ? (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionTitle}>{t('vendor.yourTrips', 'Your Trips')}</Text>
-              <Text style={styles.limitText}>{myTrips.length} / {LIMITS.MAX_TRIPS_PER_VENDOR} trips used</Text>
+              <View>
+                <Text style={styles.sectionTitle}>{t('vendor.yourTrips', 'Your Trips')}</Text>
+                <Text style={styles.limitText}>{myTrips.length} / {LIMITS.MAX_TRIPS_PER_VENDOR} trips used</Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                <TouchableOpacity 
+                  style={[styles.addNewBtn, { backgroundColor: '#10b981' }]} 
+                  onPress={handleQuickCreateSampleTrip}
+                >
+                   <FontAwesome name="bolt" size={14} color={colors.card} />
+                   <Text style={styles.addNewBtnText}>1-Click Sample</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.addNewBtn, { backgroundColor: '#8b5cf6' }]} 
+                  onPress={() => setIsAiModalVisible(true)}
+                >
+                   <FontAwesome name="magic" size={14} color={colors.card} />
+                   <Text style={styles.addNewBtnText}>{t('vendor.aiImport', 'AI Import')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.addNewBtn, myTrips.length >= LIMITS.MAX_TRIPS_PER_VENDOR && styles.disabledBtn]} 
+                  onPress={startAddingNew}
+                >
+                   <FontAwesome name="plus" size={14} color={colors.card} />
+                   <Text style={styles.addNewBtnText}>{t('vendor.addNewTrip', 'Add New')}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TouchableOpacity 
-                style={[styles.addNewBtn, { backgroundColor: '#8b5cf6' }]} 
-                onPress={() => setIsAiModalVisible(true)}
-              >
-                 <FontAwesome name="magic" size={14} color={colors.card} />
-                 <Text style={styles.addNewBtnText}>{t('vendor.aiImport', 'AI Import')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.addNewBtn, myTrips.length >= LIMITS.MAX_TRIPS_PER_VENDOR && styles.disabledBtn]} 
-                onPress={startAddingNew}
-              >
-                 <FontAwesome name="plus" size={14} color={colors.card} />
-                 <Text style={styles.addNewBtnText}>{t('vendor.addNewTrip', 'Add New')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          
-          {myTrips.length === 0 ? (
-            <View style={styles.emptyStateContainer}>
-              <FontAwesome name="map-o" size={64} color={colors.border} />
-              <Text style={styles.emptyStateTitle}>No trips yet</Text>
-              <Text style={styles.emptyStateSubtitle}>Create your first trip listing and start accepting bookings from travellers!</Text>
-              <TouchableOpacity style={styles.emptyStateCta} onPress={startAddingNew}>
-                <FontAwesome name="plus" size={14} color={colors.card} style={{ marginRight: 8 }} />
-                <Text style={styles.emptyStateCtaText}>Create Your First Trip</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            myTrips.map((trip) => (
-              <TouchableOpacity 
-                key={trip.id} 
-                style={[styles.tripItem, trip.tripStatus === 'started' && { borderColor: '#4ade80', borderWidth: 2 }]} 
-                onPress={() => {
-                  if (trip.tripStatus === 'started') {
-                    router.push(`/vendor-live/${trip.id}` as any);
-                  } else {
-                    startEditing(trip);
-                  }
-                }}
-              >
-                <View style={styles.tripInfo}>
-                  <Text style={styles.tripTitle}>{trip.title}</Text>
-                  <Text style={styles.tripDate}>{trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : 'TBD'}</Text>
-                  <Text style={styles.tripSeats}>{trip.batches ? trip.batches.reduce((acc, b) => acc + (b.totalSeats - b.bookedSeats), 0) : 0} / {trip.batches ? trip.batches.reduce((acc, b) => acc + b.totalSeats, 0) : 0} seats available</Text>
-                  {trip.tripStatus === 'started' && (
-                    <Text style={{ color: '#4ade80', fontWeight: 'bold', marginTop: 4 }}>LIVE TRACKING ACTIVE</Text>
-                  )}
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                    {trip.tripStatus !== 'started' && (
+            
+            {myTrips.length === 0 ? (
+              <View style={styles.emptyStateContainer}>
+                <FontAwesome name="map-o" size={64} color={colors.border} />
+                <Text style={styles.emptyStateTitle}>No trips yet</Text>
+                <Text style={styles.emptyStateSubtitle}>Create your first trip listing or publish a ready sample trip in 2 seconds!</Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 15 }}>
+                  <TouchableOpacity style={styles.emptyStateCta} onPress={startAddingNew}>
+                    <FontAwesome name="plus" size={14} color={colors.card} style={{ marginRight: 8 }} />
+                    <Text style={styles.emptyStateCtaText}>Create Custom Trip</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.emptyStateCta, { backgroundColor: '#10b981' }]} onPress={handleQuickCreateSampleTrip}>
+                    <FontAwesome name="bolt" size={14} color={colors.card} style={{ marginRight: 8 }} />
+                    <Text style={styles.emptyStateCtaText}>⚡ 1-Click Sample Trip</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              myTrips.map((trip) => (
+                <TouchableOpacity 
+                  key={trip.id} 
+                  style={[styles.tripItem, trip.tripStatus === 'started' && { borderColor: '#4ade80', borderWidth: 2 }]} 
+                  onPress={() => {
+                    if (trip.tripStatus === 'started') {
+                      router.push(`/vendor-live/${trip.id}` as any);
+                    } else {
+                      startEditing(trip);
+                    }
+                  }}
+                >
+                  <View style={styles.tripInfo}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={styles.tripTitle}>{trip.title}</Text>
+                      {/* Live / Draft Status Badge */}
                       <TouchableOpacity 
-                        style={{ paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#4ade80', borderRadius: 6, flexDirection: 'row', alignItems: 'center' }} 
+                        style={{ 
+                          paddingVertical: 2, 
+                          paddingHorizontal: 8, 
+                          backgroundColor: (trip as any).isPublished ?? true ? 'rgba(34,197,94,0.15)' : 'rgba(234,179,8,0.15)', 
+                          borderRadius: 100, 
+                          borderWidth: 1, 
+                          borderColor: (trip as any).isPublished ?? true ? '#22c55e' : '#eab308',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
                         onPress={(e) => {
                           e.stopPropagation();
-                          router.push(`/start-trip/${trip.id}` as any);
+                          handleTogglePublish(trip);
                         }}
                       >
-                        <FontAwesome name="play" size={10} color={colors.card} style={{ marginRight: 6 }} />
-                        <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 12 }}>Start Live</Text>
+                        <FontAwesome name={(trip as any).isPublished ?? true ? "circle" : "circle-o"} size={8} color={(trip as any).isPublished ?? true ? '#22c55e' : '#eab308'} />
+                        <Text style={{ fontSize: 10, fontWeight: '800', color: (trip as any).isPublished ?? true ? '#22c55e' : '#eab308' }}>
+                          {(trip as any).isPublished ?? true ? 'LIVE' : 'DRAFT'}
+                        </Text>
                       </TouchableOpacity>
+                    </View>
+
+                    <Text style={styles.tripDate}>{trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : 'TBD'}</Text>
+                    <Text style={styles.tripSeats}>{trip.batches ? trip.batches.reduce((acc, b) => acc + (b.totalSeats - b.bookedSeats), 0) : 0} / {trip.batches ? trip.batches.reduce((acc, b) => acc + b.totalSeats, 0) : 0} seats available</Text>
+                    {trip.tripStatus === 'started' && (
+                      <Text style={{ color: '#4ade80', fontWeight: 'bold', marginTop: 4 }}>LIVE TRACKING ACTIVE</Text>
                     )}
-                    {/* Share Button */}
-                    <TouchableOpacity 
-                      style={{ 
-                        paddingVertical: 6, 
-                        paddingHorizontal: 12, 
-                        backgroundColor: '#3b82f6', 
-                        borderRadius: 6, 
-                        flexDirection: 'row', 
-                        alignItems: 'center',
-                      }} 
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleShareTrip(trip);
-                      }}
-                    >
-                      <FontAwesome name="share-alt" size={10} color={colors.card} style={{ marginRight: 6 }} />
-                      <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 12 }}>Share</Text>
-                    </TouchableOpacity>
-                    {/* Duplicate Button */}
-                    <TouchableOpacity 
-                      style={{ 
-                        paddingVertical: 6, 
-                        paddingHorizontal: 12, 
-                        backgroundColor: '#8b5cf6', 
-                        borderRadius: 6, 
-                        flexDirection: 'row', 
-                        alignItems: 'center',
-                      }} 
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleDuplicateTrip(trip);
-                      }}
-                    >
-                      <FontAwesome name="copy" size={10} color={colors.card} style={{ marginRight: 6 }} />
-                      <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 12 }}>Duplicate</Text>
-                    </TouchableOpacity>
-                    {/* Export Button */}
-                    <TouchableOpacity 
-                      style={{ 
-                        paddingVertical: 6, 
-                        paddingHorizontal: 12, 
-                        backgroundColor: paidTripExports.has(trip.id) ? '#8b5cf6' : '#f59e0b', 
-                        borderRadius: 6, 
-                        flexDirection: 'row', 
-                        alignItems: 'center',
-                        opacity: exportingTripId === trip.id ? 0.7 : 1,
-                      }} 
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleExportData(trip);
-                      }}
-                      disabled={isExporting && exportingTripId === trip.id}
-                    >
-                      {exportingTripId === trip.id ? (
-                        <ActivityIndicator size="small" color={colors.card} style={{ marginRight: 6 }} />
-                      ) : (
-                        <FontAwesome name={paidTripExports.has(trip.id) ? "download" : "rupee"} size={10} color={colors.card} style={{ marginRight: 6 }} />
+                    <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                      {trip.tripStatus !== 'started' && (
+                        <TouchableOpacity 
+                          style={{ paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#4ade80', borderRadius: 6, flexDirection: 'row', alignItems: 'center' }} 
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            router.push(`/start-trip/${trip.id}` as any);
+                          }}
+                        >
+                          <FontAwesome name="play" size={10} color={colors.card} style={{ marginRight: 4 }} />
+                          <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 11 }}>Start Live</Text>
+                        </TouchableOpacity>
                       )}
-                      <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 12 }}>
-                        {paidTripExports.has(trip.id) ? 'Export' : `₹${EXPORT_CHARGE}`}
-                      </Text>
-                    </TouchableOpacity>
+                      {/* Share Button */}
+                      <TouchableOpacity 
+                        style={{ 
+                          paddingVertical: 6, 
+                          paddingHorizontal: 10, 
+                          backgroundColor: '#3b82f6', 
+                          borderRadius: 6, 
+                          flexDirection: 'row', 
+                          alignItems: 'center',
+                        }} 
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleShareTrip(trip);
+                        }}
+                      >
+                        <FontAwesome name="share-alt" size={10} color={colors.card} style={{ marginRight: 4 }} />
+                        <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 11 }}>Share App</Text>
+                      </TouchableOpacity>
+                      {/* Web Link Button */}
+                      <TouchableOpacity 
+                        style={{ 
+                          paddingVertical: 6, 
+                          paddingHorizontal: 10, 
+                          backgroundColor: '#0284c7', 
+                          borderRadius: 6, 
+                          flexDirection: 'row', 
+                          alignItems: 'center',
+                        }} 
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          const webUrl = `https://abtohghoomle.com/trip.html?id=${trip.id}`;
+                          (Clipboard as any).setString(webUrl);
+                          Alert.alert('Copied Web Link!', `Trip Website Page Link:\n${webUrl}`);
+                        }}
+                      >
+                        <FontAwesome name="globe" size={10} color={colors.card} style={{ marginRight: 4 }} />
+                        <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 11 }}>Web Link</Text>
+                      </TouchableOpacity>
+                      {/* Duplicate Button */}
+                      <TouchableOpacity 
+                        style={{ 
+                          paddingVertical: 6, 
+                          paddingHorizontal: 10, 
+                          backgroundColor: '#8b5cf6', 
+                          borderRadius: 6, 
+                          flexDirection: 'row', 
+                          alignItems: 'center',
+                        }} 
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleDuplicateTrip(trip);
+                        }}
+                      >
+                        <FontAwesome name="copy" size={10} color={colors.card} style={{ marginRight: 4 }} />
+                        <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 11 }}>Duplicate</Text>
+                      </TouchableOpacity>
+                      {/* Export Button */}
+                      <TouchableOpacity 
+                        style={{ 
+                          paddingVertical: 6, 
+                          paddingHorizontal: 10, 
+                          backgroundColor: paidTripExports.has(trip.id) ? '#8b5cf6' : '#f59e0b', 
+                          borderRadius: 6, 
+                          flexDirection: 'row', 
+                          alignItems: 'center',
+                          opacity: exportingTripId === trip.id ? 0.7 : 1,
+                        }} 
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleExportData(trip);
+                        }}
+                        disabled={isExporting && exportingTripId === trip.id}
+                      >
+                        {exportingTripId === trip.id ? (
+                          <ActivityIndicator size="small" color={colors.card} style={{ marginRight: 4 }} />
+                        ) : (
+                          <FontAwesome name={paidTripExports.has(trip.id) ? "download" : "rupee"} size={10} color={colors.card} style={{ marginRight: 4 }} />
+                        )}
+                        <Text style={{ color: colors.card, fontWeight: 'bold', fontSize: 11 }}>
+                          {paidTripExports.has(trip.id) ? 'Export' : `₹${EXPORT_CHARGE}`}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-                <FontAwesome name={trip.tripStatus === 'started' ? "map-marker" : "edit"} size={20} color={trip.tripStatus === 'started' ? "#4ade80" : "#00b0ff"} />
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
+                  <FontAwesome name={trip.tripStatus === 'started' ? "map-marker" : "edit"} size={20} color={trip.tripStatus === 'started' ? "#4ade80" : "#00b0ff"} />
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
         ) : (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>

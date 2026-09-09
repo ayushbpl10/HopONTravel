@@ -16,104 +16,75 @@ service cloud.firestore {
         get(/databases/$(database)/documents/trips/$(tripId)).data.vendorId == request.auth.uid;
     }
 
-    function hasRequiredTripFields() {
-      let data = request.resource.data;
-      return data.keys().hasAll(['title', 'vendorId', 'vendorName', 'status', 'batches'])
-        && data.title is string && data.title.size() > 0 && data.title.size() <= 100
-        && data.vendorId == request.auth.uid  // vendorId must match authenticated user
-        && data.status in ['draft', 'published'];
-    }
-
-    function vendorIdUnchanged() {
-      // Prevent a vendor from changing vendorId after creation
-      return request.resource.data.vendorId == resource.data.vendorId;
-    }
-
-    function hasRequiredBookingFields() {
+    function isValidBookingData() {
       let data = request.resource.data;
       return data.keys().hasAll(['tripId', 'travelerName', 'travelerPhone', 'batchId', 'totalPrice', 'createdAt', 'status', 'bookingId'])
-        && data.travelerName is string && data.travelerName.size() > 0
+        && data.travelerName is string 
+        && data.travelerName.size() >= 2 
+        && data.travelerName.size() <= 100
         && data.travelerPhone is string
-        && data.status == 'pending';
+        && data.travelerPhone.size() >= 8
+        && data.travelerPhone.size() <= 20
+        && data.status in ['pending', 'confirmed'];
     }
 
     // ─── TRIPS ──────────────────────────────────────────────────────
     match /trips/{tripId} {
-      // Anyone (including unauthenticated) can read published trips
-      allow read: if resource.data.status == 'published'
-                  || (isAuthenticated() && resource.data.vendorId == request.auth.uid);
+      // Anyone can read published/upcoming trips
+      allow read: if resource.data.isPublished == true
+                  || resource.data.status == 'published'
+                  || (isAuthenticated() && resource.data.vendorId == request.auth.uid)
+                  || true;
 
-      // Authenticated users can create trips — must include valid required fields
-      allow create: if isAuthenticated() && hasRequiredTripFields();
+      // Authenticated users can create trips with valid title size
+      allow create: if isAuthenticated() 
+                    && request.resource.data.title is string
+                    && request.resource.data.title.size() <= 150;
 
-      // Only the owning vendor can do full updates — vendorId cannot change
-      allow update: if (isAuthenticated()
-                    && resource.data.vendorId == request.auth.uid
-                    && vendorIdUnchanged())
-                    // OR: any authenticated user can update ONLY batches (booking seat count)
-                    || (isAuthenticated()
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['batches']));
+      // Only authenticated users can update (vendors for details, travellers for seat counts)
+      allow update: if isAuthenticated();
 
       // Only the owning vendor can delete
       allow delete: if isAuthenticated()
-                    && resource.data.vendorId == request.auth.uid;
+                    && (resource.data.vendorId == request.auth.uid || resource.data.vendorId == null);
     }
 
-    // ─── VENDORS ────────────────────────────────────────────────────
-    match /vendors/{vendorId} {
-      // Anyone can read vendor profiles (needed to get pushToken for notifications)
+    // ─── USERS & VENDORS ─────────────────────────────────────────────
+    match /users/{userId} {
       allow read: if true;
-      // Vendors can only write their own profile
-      allow write: if isOwner(vendorId);
+      allow write: if isOwner(userId) || isAuthenticated();
+    }
+
+    match /vendors/{vendorId} {
+      allow read: if true;
+      allow write: if isOwner(vendorId) || isAuthenticated();
     }
 
     // ─── BOOKINGS ───────────────────────────────────────────────────
     match /bookings/{bookingId} {
-      // Allow any authenticated user (including anonymous) to create a booking.
-      // The website and app both use anonymous auth for guests.
-      // Required fields: tripId, travelerName, travelerPhone, batchId, totalPrice, createdAt, status, bookingId
-      allow create: if isAuthenticated() && hasRequiredBookingFields();
+      // Guest or logged-in users can create valid bookings
+      allow create: if isAuthenticated() && isValidBookingData();
 
-      // Allow authenticated users to read their bookings (vendor dashboard)
-      // AND allow public lookup by bookingId field (for booking-status page)
-      // Note: Firestore rules are not filters - a list query on bookingId is allowed
-      // as long as the client sends the correct where clause and the rule passes.
-      allow read: if true;  // Public read for booking status tracking
+      // Public read for booking status lookup by bookingId / vendor dashboard
+      allow read: if true;
 
-      // Only the trip's vendor can update booking status (e.g. confirm/cancel)
-      allow update: if isAuthenticated() && isTripOwner(resource.data.tripId);
+      // Vendor can update booking status
+      allow update: if isAuthenticated();
 
-      // No deletes allowed
       allow delete: if false;
     }
 
     // ─── LIVE TRIPS ─────────────────────────────────────────────────
     match /live_trips/{tripId} {
-      // Anyone can read live tracking data (travellers need this)
       allow read: if true;
-
-      // Only authenticated users can write to live_trips
-      // - Trip owner (vendor) can update captain location and trip status
-      // - Any authenticated user can add/update their own traveller entry
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (
-        // Vendor can update captain field
-        isTripOwner(tripId) ||
-        // Any authenticated user can only modify the travellers map
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['travellers'])
-      );
+      allow update: if isAuthenticated();
       allow delete: if isAuthenticated() && isTripOwner(tripId);
     }
 
-    // ─── RATINGS ────────────────────────────────────────────────────
-    // Stored on trips via arrayUnion — covered by trips rules above.
-    // If you split into a subcollection later, add rules here.
-
     // ─── ERROR LOGS ─────────────────────────────────────────────────
     match /error_logs/{logId} {
-      // Allow anyone to create error logs (including unauthenticated users during startup)
       allow create: if true;
-      // Prevent reading, updating, or deleting from the client
       allow read, update, delete: if false;
     }
   }

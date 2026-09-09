@@ -109,6 +109,8 @@ export interface Trip {
   
   // Vendor's payment gateway settings
   vendorPaymentConfig?: VendorPaymentConfig;
+  vendorInstagram?: string;
+  termsAndConditions?: string;
 }
 
 export const trips: Trip[] = [

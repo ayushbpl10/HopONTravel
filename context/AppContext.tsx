@@ -86,6 +86,8 @@ interface UserProfile {
   role?: 'vendor' | 'traveller';
   paymentSettings?: VendorPaymentSettings; // Vendor's payment gateway settings
   discountCodes?: { code: string; discountPercent: number; maxUses: number; usedCount: number }[]; // Vendor's promo codes
+  instagramUrl?: string;
+  termsAndConditions?: string;
 }
 
 interface AppContextType {
