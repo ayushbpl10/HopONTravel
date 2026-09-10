@@ -5,9 +5,6 @@
 
 import { Alert, Platform } from 'react-native';
 
-// Store original Platform.OS
-let originalPlatformOS: string;
-
 // Mock react-native
 jest.mock('react-native', () => ({
   Alert: {
@@ -26,7 +23,7 @@ jest.mock('react-native', () => ({
 // Mock react-native-razorpay
 jest.mock('react-native-razorpay', () => ({
   default: {
-    open: jest.fn(),
+    open: jest.fn(() => Promise.reject({ code: 'MODULE_NOT_FOUND' })),
   },
 }));
 
@@ -44,6 +41,17 @@ describe('Razorpay Checkout Utility', () => {
       contact: '+919876543210',
     },
   };
+
+  const createMockDocument = () => ({
+    createElement: jest.fn(() => ({ src: '', onload: null, onerror: null })),
+    body: {
+      appendChild: jest.fn((el: any) => {
+        setTimeout(() => {
+          if (el.onerror) el.onerror();
+        }, 0);
+      }),
+    },
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -74,13 +82,15 @@ describe('Razorpay Checkout Utility', () => {
       
       // Mock web checkout success
       (global as any).window = {
-        Razorpay: jest.fn(() => ({
-          open: jest.fn(),
-          on: jest.fn(),
-        })),
+        Razorpay: jest.fn((config) => {
+          setTimeout(() => config?.handler?.({ razorpay_payment_id: 'pay_test' }), 0);
+          return {
+            open: jest.fn(),
+            on: jest.fn(),
+          };
+        }),
       };
 
-      // This won't fully succeed without proper window mock, but won't fail validation
       const result = await openRazorpayCheckout(options);
       
       // The error should NOT be about minimum amount
@@ -110,12 +120,9 @@ describe('Razorpay Checkout Utility', () => {
     it('should accept valid test key format', async () => {
       const options = { ...validOptions, razorpayKey: 'rzp_test_abc123' };
 
-      // Mock to prevent actual checkout
+      // Mock to complete checkout promptly
       (global as any).window = { Razorpay: undefined };
-      (global as any).document = {
-        createElement: jest.fn(() => ({ src: '', onload: null, onerror: null })),
-        body: { appendChild: jest.fn() },
-      };
+      (global as any).document = createMockDocument();
 
       const result = await openRazorpayCheckout(options);
 
@@ -129,10 +136,7 @@ describe('Razorpay Checkout Utility', () => {
       const options = { ...validOptions, razorpayKey: 'rzp_live_xyz789' };
 
       (global as any).window = { Razorpay: undefined };
-      (global as any).document = {
-        createElement: jest.fn(() => ({ src: '', onload: null, onerror: null })),
-        body: { appendChild: jest.fn() },
-      };
+      (global as any).document = createMockDocument();
 
       const result = await openRazorpayCheckout(options);
 
@@ -144,15 +148,10 @@ describe('Razorpay Checkout Utility', () => {
 
   describe('Amount Conversion', () => {
     it('should convert INR to paise correctly', async () => {
-      // We can't directly test this without accessing internals,
-      // but we can verify the function doesn't crash with decimal amounts
       const options = { ...validOptions, amount: 99.99 };
 
       (global as any).window = { Razorpay: undefined };
-      (global as any).document = {
-        createElement: jest.fn(() => ({ src: '', onload: null, onerror: null })),
-        body: { appendChild: jest.fn() },
-      };
+      (global as any).document = createMockDocument();
 
       // Should not throw
       await expect(openRazorpayCheckout(options)).resolves.toBeDefined();
@@ -194,14 +193,16 @@ describe('Razorpay Checkout Utility', () => {
         const mockOn = jest.fn();
         
         (global as any).window = {
-          Razorpay: jest.fn(() => ({
-            open: mockOpen,
-            on: mockOn,
-          })),
+          Razorpay: jest.fn((config) => {
+            setTimeout(() => config?.handler?.({ razorpay_payment_id: 'pay_test' }), 0);
+            return {
+              open: mockOpen,
+              on: mockOn,
+            };
+          }),
         };
 
-        // Start checkout but don't await (it will hang without handler call)
-        openRazorpayCheckout(validOptions);
+        await openRazorpayCheckout(validOptions);
 
         // Verify Razorpay was instantiated
         expect((global as any).window.Razorpay).toHaveBeenCalled();
@@ -212,15 +213,13 @@ describe('Razorpay Checkout Utility', () => {
     describe('Native Platform (Expo Go)', () => {
       beforeEach(() => {
         (Platform as any).OS = 'ios';
-        jest.resetModules();
+      });
+
+      afterEach(() => {
+        (Platform as any).OS = 'web';
       });
 
       it('should show alert on Expo Go when native module unavailable', async () => {
-        // Mock require to throw MODULE_NOT_FOUND
-        jest.doMock('react-native-razorpay', () => {
-          throw { code: 'MODULE_NOT_FOUND' };
-        });
-
         const result = await openRazorpayCheckout(validOptions);
 
         expect(Alert.alert).toHaveBeenCalledWith(
@@ -234,11 +233,8 @@ describe('Razorpay Checkout Utility', () => {
 
   describe('Response Handling', () => {
     it('should return success with paymentId on successful payment', async () => {
-      const mockHandler = jest.fn();
-      
       (global as any).window = {
         Razorpay: jest.fn((config) => {
-          // Immediately call handler to simulate success
           setTimeout(() => {
             config.handler({
               razorpay_payment_id: 'pay_test_success',
@@ -298,8 +294,9 @@ describe('Razorpay Checkout Utility', () => {
         }),
       };
 
-      // Note: This test structure means the promise won't resolve normally
-      // In real implementation, you'd need to handle this differently
+      const result = await openRazorpayCheckout(validOptions);
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Card declined');
     });
   });
 
@@ -310,6 +307,7 @@ describe('Razorpay Checkout Utility', () => {
       (global as any).window = {
         Razorpay: jest.fn((config) => {
           capturedConfig = config;
+          setTimeout(() => config?.handler?.({ razorpay_payment_id: 'pay_test' }), 0);
           return {
             open: jest.fn(),
             on: jest.fn(),
@@ -337,6 +335,7 @@ describe('Razorpay Checkout Utility', () => {
       (global as any).window = {
         Razorpay: jest.fn((config) => {
           capturedConfig = config;
+          setTimeout(() => config?.handler?.({ razorpay_payment_id: 'pay_test' }), 0);
           return {
             open: jest.fn(),
             on: jest.fn(),
@@ -355,6 +354,7 @@ describe('Razorpay Checkout Utility', () => {
       (global as any).window = {
         Razorpay: jest.fn((config) => {
           capturedConfig = config;
+          setTimeout(() => config?.handler?.({ razorpay_payment_id: 'pay_test' }), 0);
           return {
             open: jest.fn(),
             on: jest.fn(),
@@ -381,6 +381,7 @@ describe('Razorpay Checkout Utility', () => {
       (global as any).window = {
         Razorpay: jest.fn((config) => {
           capturedConfig = config;
+          setTimeout(() => config?.handler?.({ razorpay_payment_id: 'pay_test' }), 0);
           return {
             open: jest.fn(),
             on: jest.fn(),
