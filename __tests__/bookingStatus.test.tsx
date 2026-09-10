@@ -15,7 +15,10 @@ jest.mock('firebase/firestore', () => ({
 }));
 
 // Mock expo-router
+let mockBookingSearchParams: { bookingId?: string } = {};
 jest.mock('expo-router', () => ({
+  __esModule: true,
+  useLocalSearchParams: () => mockBookingSearchParams,
   Stack: {
     Screen: () => null,
   },

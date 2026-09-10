@@ -25,27 +25,30 @@ export default function WishlistScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={wishlistedTrips.length === 0 ? styles.emptyState : styles.list}
           renderItem={({ item }) => (
-            <Link href={`/trip/${item.id}`} asChild>
-              <TouchableOpacity style={styles.card}>
-                <Image 
-                  source={{ uri: (item.images && item.images.length > 0 ? item.images[0] : null) || 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&q=80' }} 
-                  style={styles.image} 
-                />
-                <View style={styles.info}>
-                  <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
-                  <Text style={styles.vendor}>by {item.vendorName}</Text>
-                  <Text style={styles.price}>
-                    {item.packages && item.packages.length > 0 ? `₹${item.packages[0].price}` : 'Price TBD'}
-                  </Text>
-                </View>
-                <TouchableOpacity 
-                  style={styles.removeBtn}
-                  onPress={() => toggleWishlist(item.id)}
-                >
-                  <FontAwesome name="heart" size={24} color={colors.danger} />
+            <View style={styles.card}>
+              <Link href={`/trip/${item.id}`} asChild>
+                <TouchableOpacity style={styles.cardBody} activeOpacity={0.8}>
+                  <Image 
+                    source={{ uri: (item.images && item.images.length > 0 ? item.images[0] : null) || 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&q=80' }} 
+                    style={styles.image} 
+                  />
+                  <View style={styles.info}>
+                    <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
+                    <Text style={styles.vendor}>by {item.vendorName}</Text>
+                    <Text style={styles.price}>
+                      {item.packages && item.packages.length > 0 ? `₹${item.packages[0].price}` : 'Price TBD'}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
+              </Link>
+              <TouchableOpacity 
+                style={styles.removeBtn}
+                onPress={() => toggleWishlist(item.id)}
+                accessibilityLabel="Remove from wishlist"
+              >
+                <FontAwesome name="heart" size={24} color={colors.danger} />
               </TouchableOpacity>
-            </Link>
+            </View>
           )}
           ListEmptyComponent={
             <View style={styles.emptyContent}>
@@ -66,7 +69,10 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
   card: {
     flexDirection: 'row', backgroundColor: colors.card, borderRadius: 12, marginBottom: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
-    overflow: 'hidden', borderWidth: 1, borderColor: colors.border
+    overflow: 'hidden', borderWidth: 1, borderColor: colors.border, alignItems: 'center'
+  },
+  cardBody: {
+    flex: 1, flexDirection: 'row', alignItems: 'center'
   },
   image: { width: 100, height: 100 },
   info: { flex: 1, padding: 12, justifyContent: 'center' },

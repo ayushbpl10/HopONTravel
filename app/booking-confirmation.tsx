@@ -3,7 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Linking, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Linking, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function BookingConfirmationScreen() {
   const params = useLocalSearchParams();
@@ -25,22 +25,22 @@ export default function BookingConfirmationScreen() {
         await Linking.openURL(webUrl);
       }
     } catch (error) {
-      alert('Could not open WhatsApp.');
+      Alert.alert('Error', 'Could not open WhatsApp.');
     }
   };
 
   const handleUPIPayment = async () => {
     if (!vendorUPI) {
-      alert('UPI details not provided by the vendor. Please contact via WhatsApp.');
+      Alert.alert('Notice', 'UPI details not provided by the vendor. Please contact via WhatsApp.');
       return;
     }
     const upiUrl = `upi://pay?pa=${vendorUPI}&pn=${encodeURIComponent(vendorName as string)}&am=${totalPrice}.00&cu=INR&tr=${bookingId}`;
 
     try {
       await Linking.openURL(upiUrl);
-      alert('Your payment attempt was logged. The vendor will manually verify it.');
+      Alert.alert('Payment Logged', 'Your payment attempt was logged. The vendor will manually verify it.');
     } catch (error) {
-      alert('Could not open UPI App. Please ensure you have a UPI app installed.');
+      Alert.alert('UPI App Not Found', 'Could not open UPI App. Please ensure you have a UPI app installed.');
     }
   };
 

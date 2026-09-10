@@ -70,7 +70,7 @@ export default function VendorDashboardScreen() {
     setEditTotalSeats(d.batches && d.batches.length > 0 ? d.batches[0].totalSeats.toString() : '20');
     setEditBookedSeats(d.batches && d.batches.length > 0 ? d.batches[0].bookedSeats.toString() : '0');
     setEditImages(d.images || []);
-    setEditingTrip(null);
+    setEditingTrip({ id: 'new', ...d } as Trip);
     setIsAddingNew(true);
     Alert.alert('Template Applied! 🚀', `Pre-filled form with "${tpl.name}". Adjust any details and tap Publish Trip!`);
   };
@@ -569,7 +569,7 @@ export default function VendorDashboardScreen() {
   };
 
   const handleDeleteTrip = () => {
-    if (!editingTrip) return;
+    if (!editingTrip || editingTrip.id === 'new') return;
     
     Alert.alert(
       'Delete Trip',
@@ -597,16 +597,17 @@ export default function VendorDashboardScreen() {
   };
 
   const saveTrip = async () => {
-    if (!editingTrip) return;
-    if (!editTitle || editPrice === '₹') {
-      Alert.alert('Required Fields', 'Please fill in the title and price.');
+    if (!editingTrip && !isAddingNew) return;
+    const numericPrice = parseInt(editPrice.replace(/[^\d]/g, ''), 10) || 0;
+    if (!editTitle.trim() || numericPrice <= 0) {
+      Alert.alert('Required Fields', 'Please fill in a valid title and price.');
       return;
     }
     
     setIsUploading(true);
     try {
       const finalImageUrls: string[] = [];
-      const folderId = isAddingNew ? Date.now().toString() : editingTrip.id;
+      const folderId = (isAddingNew || !editingTrip || editingTrip.id === 'new') ? Date.now().toString() : editingTrip.id;
 
       for (const uri of editImages) {
         if (uri.startsWith('http')) {
@@ -619,9 +620,6 @@ export default function VendorDashboardScreen() {
       }
 
       const formattedDate = `${editStartDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${editEndDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
-
-      // Extract numeric price (remove currency symbol and non-digits)
-      const numericPrice = parseInt(editPrice.replace(/[^\d]/g, '')) || 0;
       
       const tripData = {
         title: editTitle.trim(),
@@ -629,7 +627,12 @@ export default function VendorDashboardScreen() {
         description: editDesc.trim(),
         category: editCategory,
         destination: editDestination,
-        batches: [{ id: Date.now().toString(), dateDuration: formattedDate, totalSeats: parseInt(editTotalSeats) || 0, bookedSeats: parseInt(editBookedSeats) || 0 }],
+        batches: [{ 
+          id: Date.now().toString(), 
+          dateDuration: formattedDate, 
+          totalSeats: Math.max(1, parseInt(editTotalSeats, 10) || 20), 
+          bookedSeats: Math.max(0, parseInt(editBookedSeats, 10) || 0) 
+        }],
         images: finalImageUrls,
         vendorName: userProfile?.name || '',
         vendorId: userProfile?.id || '',
@@ -646,7 +649,7 @@ export default function VendorDashboardScreen() {
         status: 'published' as const
       };
 
-      if (isAddingNew) {
+      if (isAddingNew || !editingTrip || editingTrip.id === 'new') {
         await addTrip(tripData);
       } else {
         await updateTrip(editingTrip.id, tripData);
@@ -1824,7 +1827,7 @@ export default function VendorDashboardScreen() {
           </TouchableOpacity>
 
 
-          {!isAddingNew && (
+          {!isAddingNew && editingTrip?.id !== 'new' && (
             <TouchableOpacity 
               style={[styles.deleteButton, isUploading && styles.disabledButton]} 
               onPress={handleDeleteTrip}

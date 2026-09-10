@@ -22,6 +22,7 @@ export default function VendorLoginScreen() {
       router.replace('/vendor-dashboard');
     } catch (e: any) {
       Logger.error('Vendor login explicitly failed', e);
+      Alert.alert('Login Failed', e?.message || 'Could not sign in with Google. Please try again.');
     } finally {
       setLocalLoading(false);
     }

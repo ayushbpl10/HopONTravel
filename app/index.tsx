@@ -20,7 +20,9 @@ const PRICE_FILTERS = [
 const AnimatedCard = ({ trip, t, isWishlisted, onToggleWishlist, colors, styles }: any) => {
   const scale = useRef(new Animated.Value(1)).current;
   const price = trip.packages && trip.packages.length > 0 ? trip.packages[0].price : null;
-  const available = trip.batches ? trip.batches.reduce((acc: number, b: any) => acc + (b.totalSeats - b.bookedSeats), 0) : 0;
+  const available = trip.batches 
+    ? trip.batches.reduce((acc: number, b: any) => acc + Math.max(0, (Number(b.totalSeats) || 0) - (Number(b.bookedSeats) || 0)), 0) 
+    : 0;
   
   return (
     <Link href={`/trip/${trip.id}`} asChild>
@@ -107,7 +109,9 @@ export default function HomeScreen() {
       if (trip.status !== 'published') return false;
       if (trip.title?.startsWith('REPORT:')) return false;
       
-      const matchesSearch = trip.title.toLowerCase().includes(query) || trip.description.toLowerCase().includes(query);
+      const matchesSearch = (trip.title?.toLowerCase() || '').includes(query) || 
+                            (trip.description?.toLowerCase() || '').includes(query) ||
+                            (trip.vendorName?.toLowerCase() || '').includes(query);
       const price = trip.packages && trip.packages.length > 0 ? trip.packages[0].price : 0;
       const matchesPrice = price >= (filter.min ?? 0) && price <= filter.max;
       const matchesCategory = activeCategory ? trip.category === activeCategory : true;

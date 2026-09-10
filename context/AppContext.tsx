@@ -606,7 +606,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Increment bookedSeats for the relevant batch (best-effort)
       try {
         const updatedBatches = trip.batches.map((b: any) =>
-          b.id === booking.batchId ? { ...b, bookedSeats: b.bookedSeats + (booking.seats || 1) } : b
+          b.id === booking.batchId ? { ...b, bookedSeats: (Number(b.bookedSeats) || 0) + (Number(booking.seats) || 1) } : b
         );
         await updateDoc(tripRef, { batches: updatedBatches });
       } catch (seatErr) {

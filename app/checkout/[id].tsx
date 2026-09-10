@@ -9,7 +9,7 @@ import { DEFAULT_TERMS_AND_CONDITIONS } from '../../data/defaultTerms';
 
 export default function CheckoutScreen() {
   const { 
-    id, batchId, packageName, seats, totalPrice, tripTitle, 
+    id, batchId, packageName, seats, totalPrice, tripTitle, tripDate,
     vendorName, vendorWhatsApp, vendorUPI,
     vendorPaymentEnabled, vendorPaymentGateway, vendorRazorpayKey,
     termsAndConditions
@@ -40,9 +40,23 @@ export default function CheckoutScreen() {
 
   const activeTermsText = (termsAndConditions as string) || DEFAULT_TERMS_AND_CONDITIONS;
 
+  // Calculate dynamic price per seat
+  const baseSeats = Math.max(1, parseInt(seats?.toString() || '1', 10) || 1);
+  const initialTotal = Math.max(0, parseFloat(totalPrice as string) || 0);
+  const perSeatPrice = baseSeats > 0 ? initialTotal / baseSeats : initialTotal;
+  const parsedTravellers = parseInt(numTravellers, 10);
+  const currentTotal = (!isNaN(parsedTravellers) && parsedTravellers > 0)
+    ? Math.round(perSeatPrice * parsedTravellers)
+    : initialTotal;
+
   const handleProceed = async () => {
     if (!name || !phone || !email || !numTravellers) {
       Alert.alert('Required Fields', 'Please fill out all fields.');
+      return;
+    }
+    const travellersCount = parseInt(numTravellers, 10);
+    if (isNaN(travellersCount) || travellersCount < 1) {
+      Alert.alert('Invalid Travellers', 'Number of travellers must be at least 1.');
       return;
     }
     if (!consent) {
@@ -72,7 +86,7 @@ export default function CheckoutScreen() {
 
     // Generate Order ID
     const orderId = 'ATGL-' + Math.floor(10000000 + Math.random() * 90000000).toString();
-    const amount = parseFloat(totalPrice as string) || 0;
+    const amount = currentTotal;
     
     if (amount <= 0) {
       Alert.alert('Error', 'Invalid booking amount. Please go back and try again.');
@@ -99,7 +113,7 @@ export default function CheckoutScreen() {
           notes: {
             trip_id: id as string,
             batch_id: batchId as string,
-            seats: numTravellers,
+            seats: travellersCount.toString(),
           },
         });
 
@@ -117,7 +131,7 @@ export default function CheckoutScreen() {
         travelerName: name,
         travelerPhone: phone,
         travelerEmail: email,
-        seats: parseInt(numTravellers, 10),
+        seats: travellersCount,
         totalPrice: amount,
         status: bookingStatus,
         createdAt: Date.now(),
@@ -130,9 +144,9 @@ export default function CheckoutScreen() {
         pathname: '/booking-confirmation' as any,
         params: {
           tripTitle,
-          tripDate: 'TBD',
-          seats: numTravellers,
-          totalPrice: totalPrice as string,
+          tripDate: (tripDate as string) || 'TBD',
+          seats: travellersCount.toString(),
+          totalPrice: amount.toString(),
           bookingId: orderId,
           packageName,
           paymentStatus: bookingStatus,
@@ -305,7 +319,7 @@ export default function CheckoutScreen() {
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <FontAwesome name={hasOnlinePayment ? "lock" : "check"} size={16} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.btnText}>{hasOnlinePayment ? `Pay ₹${totalPrice}` : 'Confirm Booking'}</Text>
+            <Text style={styles.btnText}>{hasOnlinePayment ? `Pay ₹${currentTotal}` : 'Confirm Booking'}</Text>
           </View>
         )}
       </TouchableOpacity>

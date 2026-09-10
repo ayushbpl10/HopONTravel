@@ -1,5 +1,5 @@
 import { FontAwesome } from '@expo/vector-icons';
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -10,7 +10,8 @@ import { Booking } from '../data/trips';
 
 export default function BookingStatusScreen() {
   const { userProfile, loginWithGoogle, logout, loginLoading, isOnline } = useAppContext();
-  const [searchId, setSearchId] = useState('');
+  const { bookingId: paramBookingId } = useLocalSearchParams<{ bookingId?: string }>();
+  const [searchId, setSearchId] = useState(paramBookingId || '');
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState<Booking | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -19,6 +20,50 @@ export default function BookingStatusScreen() {
   const [loadingUserBookings, setLoadingUserBookings] = useState(false);
   
   const { t } = useTranslation();
+
+  const searchBooking = async (idToSearch: string) => {
+    const cleanId = idToSearch.trim();
+    if (!cleanId) {
+      setErrorMsg('Please enter a valid Booking ID.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg('');
+    setBooking(null);
+
+    try {
+      const q = query(collection(db, 'bookings'), where('bookingId', '==', cleanId.toUpperCase()));
+      const snap = await getDocs(q);
+
+      if (snap.empty) {
+        // Fallback: Check if they entered the document ID instead of the custom bookingId
+        const q2 = query(collection(db, 'bookings'));
+        const allSnap = await getDocs(q2);
+        const found = allSnap.docs.find(d => d.id === cleanId || d.data().bookingId === cleanId);
+        
+        if (found) {
+          setBooking({ id: found.id, ...found.data() } as Booking);
+        } else {
+          setErrorMsg('Booking not found. Please check your Booking ID.');
+        }
+      } else {
+        setBooking({ id: snap.docs[0].id, ...snap.docs[0].data() } as Booking);
+      }
+    } catch (e) {
+      console.error(e);
+      setErrorMsg('Error fetching booking. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (paramBookingId) {
+      setSearchId(paramBookingId);
+      searchBooking(paramBookingId);
+    }
+  }, [paramBookingId]);
 
   useEffect(() => {
     const fetchUserBookings = async () => {
@@ -41,40 +86,8 @@ export default function BookingStatusScreen() {
     fetchUserBookings();
   }, [userProfile]);
 
-  const handleSearch = async () => {
-    if (!searchId.trim()) {
-      setErrorMsg('Please enter a valid Booking ID.');
-      return;
-    }
-
-    setLoading(true);
-    setErrorMsg('');
-    setBooking(null);
-
-    try {
-      const q = query(collection(db, 'bookings'), where('bookingId', '==', searchId.trim().toUpperCase()));
-      const snap = await getDocs(q);
-
-      if (snap.empty) {
-        // Fallback: Check if they entered the document ID instead of the custom bookingId
-        const q2 = query(collection(db, 'bookings'));
-        const allSnap = await getDocs(q2);
-        const found = allSnap.docs.find(d => d.id === searchId.trim() || d.data().bookingId === searchId.trim());
-        
-        if (found) {
-          setBooking({ id: found.id, ...found.data() } as Booking);
-        } else {
-          setErrorMsg('Booking not found. Please check your Booking ID.');
-        }
-      } else {
-        setBooking({ id: snap.docs[0].id, ...snap.docs[0].data() } as Booking);
-      }
-    } catch (e) {
-      console.error(e);
-      setErrorMsg('Error fetching booking. Please try again later.');
-    } finally {
-      setLoading(false);
-    }
+  const handleSearch = () => {
+    searchBooking(searchId);
   };
 
   const renderTicket = (b: Booking) => (

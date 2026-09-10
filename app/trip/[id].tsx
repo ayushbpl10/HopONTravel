@@ -260,6 +260,7 @@ export default function TripDetailScreen() {
   };
 
   const handleProceedToCheckout = () => {
+    const selectedBatch = trip.batches?.find(b => b.id === selectedBatchId);
     router.push({
       pathname: `/checkout/${trip.id}` as any,
       params: {
@@ -268,6 +269,7 @@ export default function TripDetailScreen() {
         seats: seats.toString(),
         totalPrice: totalPrice.toString(),
         tripTitle: trip.title,
+        tripDate: selectedBatch?.dateDuration || (trip.batches && trip.batches.length > 0 ? trip.batches[0].dateDuration : 'TBD'),
         vendorName: trip.vendorName,
         vendorWhatsApp: trip.vendorWhatsApp,
         vendorUPI: trip.vendorUPI && trip.vendorUPI.length > 0 ? trip.vendorUPI[0] : '',
@@ -275,6 +277,7 @@ export default function TripDetailScreen() {
         vendorPaymentEnabled: trip.vendorPaymentConfig?.enabled ? 'true' : 'false',
         vendorPaymentGateway: trip.vendorPaymentConfig?.gateway || 'manual',
         vendorRazorpayKey: trip.vendorPaymentConfig?.razorpayKeyId || '',
+        termsAndConditions: (trip as any).termsAndConditions || '',
       }
     });
   };
@@ -300,6 +303,26 @@ export default function TripDetailScreen() {
       console.error('Error sharing trip:', error);
     }
   };
+
+  if (!trip) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+        <FontAwesome name="compass" size={64} color={colors.textSecondary} />
+        <Text style={{ fontSize: 20, fontWeight: 'bold', color: colors.textPrimary, marginTop: 16 }}>
+          Trip Not Found
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 8, marginBottom: 24 }}>
+          This trip may have been removed or the link is invalid.
+        </Text>
+        <TouchableOpacity
+          style={{ backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 25 }}
+          onPress={() => router.replace('/')}
+        >
+          <Text style={{ color: '#fff', fontWeight: 'bold' }}>Explore Other Trips</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>

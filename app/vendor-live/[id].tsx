@@ -85,7 +85,26 @@ export default function VendorLiveDashboard() {
     };
   }, []);
 
-  if (!trip) return <View><Text>Trip not found</Text></View>;
+  if (!trip) {
+    return (
+      <>
+        <Stack.Screen options={{ title: 'Live Tracking' }} />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#fff' }}>
+          <FontAwesome name="exclamation-circle" size={48} color="#94a3b8" />
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#334155', marginTop: 12 }}>Trip Not Found</Text>
+          <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 6, marginBottom: 20 }}>
+            This trip may have ended or is no longer available.
+          </Text>
+          <TouchableOpacity 
+            style={{ backgroundColor: '#00b0ff', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 }}
+            onPress={() => router.replace('/vendor-dashboard' as any)}
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Back to Dashboard</Text>
+          </TouchableOpacity>
+        </View>
+      </>
+    );
+  }
 
   const handleEndPickups = async () => {
     Alert.alert(

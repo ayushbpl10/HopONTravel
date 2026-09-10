@@ -27,6 +27,7 @@ export default function TravellerLoginScreen() {
       }
     } catch (e: any) {
       Logger.error('Traveller login explicitly failed', e);
+      Alert.alert('Login Failed', e?.message || 'Could not sign in with Google. Please try again.');
     } finally {
       setLocalLoading(false);
     }

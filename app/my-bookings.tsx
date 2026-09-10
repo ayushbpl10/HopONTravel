@@ -127,15 +127,30 @@ export default function MyBookingsScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={bookings.length === 0 ? styles.emptyContainer : styles.listContainer}
           renderItem={({ item }) => (
-            <View style={styles.card}>
+            <TouchableOpacity 
+              style={styles.card}
+              onPress={() => router.push({ pathname: '/booking-status' as any, params: { bookingId: item.bookingId || item.id } })}
+              accessibilityRole="button"
+              accessibilityLabel={`View booking for ${item.packageName}`}
+            >
               <View style={styles.cardHeader}>
                 <Text style={styles.statusBadge}>{item.status.toUpperCase()}</Text>
-                <Text style={styles.date}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                <Text style={styles.date}>{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}</Text>
               </View>
-              <Text style={styles.tripTitle}>{item.travelerName}&apos;s Trip</Text>
-              <Text style={styles.details}>{t('bookings.package', 'Package')}: {item.packageName}</Text>
-              <Text style={styles.details}>{t('bookings.totalPaid', 'Total Paid')}: ₹{item.totalPrice}</Text>
-            </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tripTitle}>{item.travelerName}&apos;s Trip</Text>
+                  <Text style={styles.details}>{t('bookings.package', 'Package')}: {item.packageName}</Text>
+                  <Text style={styles.details}>{t('bookings.totalPaid', 'Total Paid')}: ₹{item.totalPrice}</Text>
+                  {item.bookingId ? (
+                    <Text style={[styles.details, { fontSize: 12, color: colors.primary, fontWeight: '600' }]}>
+                      ID: {item.bookingId}
+                    </Text>
+                  ) : null}
+                </View>
+                <FontAwesome name="chevron-right" size={16} color={colors.textSecondary} style={{ marginLeft: 8 }} />
+              </View>
+            </TouchableOpacity>
           )}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
