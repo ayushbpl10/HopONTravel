@@ -195,7 +195,7 @@ export const exportToCSV = async (data: ExportData): Promise<boolean> => {
     // Mobile: Save to file and share
     const fileUri = `${FileSystem.documentDirectory}${fileName}`;
     await FileSystem.writeAsStringAsync(fileUri, csvContent, {
-      encoding: FileSystem.EncodingType.UTF8,
+      encoding: (FileSystem.EncodingType && FileSystem.EncodingType.UTF8) || 'utf8',
     });
     
     if (await Sharing.isAvailableAsync()) {
@@ -231,8 +231,11 @@ export const exportToPDF = async (data: ExportData): Promise<boolean> => {
         printWindow.document.write(htmlContent);
         printWindow.document.close();
         printWindow.print();
+        return true;
+      } else {
+        Alert.alert('Error', 'Please allow popups to print/save PDF');
+        return false;
       }
-      return true;
     }
     
     // Mobile: Generate PDF and share

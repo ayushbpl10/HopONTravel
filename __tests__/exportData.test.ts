@@ -16,9 +16,22 @@ jest.mock('react-native', () => ({
 }));
 
 // Mock expo modules
-jest.mock('expo-file-system', () => ({
+jest.mock('expo-file-system/legacy', () => ({
+  __esModule: true,
   documentDirectory: '/mock/documents/',
   writeAsStringAsync: jest.fn(() => Promise.resolve()),
+  readAsStringAsync: jest.fn(() => Promise.resolve('')),
+  deleteAsync: jest.fn(() => Promise.resolve()),
+  EncodingType: {
+    UTF8: 'utf8',
+  },
+}));
+jest.mock('expo-file-system', () => ({
+  __esModule: true,
+  documentDirectory: '/mock/documents/',
+  writeAsStringAsync: jest.fn(() => Promise.resolve()),
+  readAsStringAsync: jest.fn(() => Promise.resolve('')),
+  deleteAsync: jest.fn(() => Promise.resolve()),
   EncodingType: {
     UTF8: 'utf8',
   },
@@ -33,74 +46,78 @@ jest.mock('expo-print', () => ({
   printToFileAsync: jest.fn(() => Promise.resolve({ uri: '/mock/export.pdf' })),
 }));
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Booking, Trip } from '../data/trips';
 import { ExportData, exportToCSV, exportToPDF, showExportDialog } from '../utils/exportData';
 
+const mockTrip: Trip = {
+  id: 'trip_123',
+  title: 'Manali Adventure',
+  description: 'A beautiful trek',
+  vendorName: 'Mountain Tours',
+  vendorWhatsApp: '+919876543210',
+  vendorUPI: ['vendor@upi'],
+  vendorId: 'vendor_001',
+  images: [],
+  packages: [{ name: 'Standard', price: 1500 }],
+  batches: [{ id: 'b1', dateDuration: '15-17 Dec', totalSeats: 20, bookedSeats: 5 }],
+  pickupPoints: [],
+  addOns: [],
+  itinerary: 'Day 1: Arrival',
+  inclusions: ['Transport'],
+  exclusions: ['Personal expenses'],
+  thingsToCarry: ['Warm clothes'],
+  cancellationPolicy: ['No refunds'],
+  status: 'published',
+};
+
+const mockBookings: Booking[] = [
+  {
+    id: 'booking_1',
+    tripId: 'trip_123',
+    batchId: 'b1',
+    packageName: 'Standard',
+    travelerName: 'John Doe',
+    travelerPhone: '+919876543210',
+    travelerEmail: 'john@example.com',
+    seats: 2,
+    totalPrice: 3000,
+    status: 'confirmed',
+    createdAt: Date.now() - 86400000, // Yesterday
+    bookingId: 'ATGL-12345678',
+  },
+  {
+    id: 'booking_2',
+    tripId: 'trip_123',
+    batchId: 'b1',
+    packageName: 'Standard',
+    travelerName: 'Jane Smith',
+    travelerPhone: '+919876543211',
+    travelerEmail: 'jane@example.com',
+    seats: 1,
+    totalPrice: 1500,
+    status: 'pending',
+    createdAt: Date.now(),
+    bookingId: 'ATGL-87654321',
+  },
+];
+
+const mockExportData: ExportData = {
+  trip: mockTrip,
+  bookings: mockBookings,
+  exportDate: new Date('2024-01-15T10:30:00Z'),
+};
+
 describe('Export Data Utility', () => {
-  const mockTrip: Trip = {
-    id: 'trip_123',
-    title: 'Manali Adventure',
-    description: 'A beautiful trek',
-    vendorName: 'Mountain Tours',
-    vendorWhatsApp: '+919876543210',
-    vendorUPI: ['vendor@upi'],
-    vendorId: 'vendor_001',
-    images: [],
-    packages: [{ name: 'Standard', price: 1500 }],
-    batches: [{ id: 'b1', dateDuration: '15-17 Dec', totalSeats: 20, bookedSeats: 5 }],
-    pickupPoints: [],
-    addOns: [],
-    itinerary: 'Day 1: Arrival',
-    inclusions: ['Transport'],
-    exclusions: ['Personal expenses'],
-    thingsToCarry: ['Warm clothes'],
-    cancellationPolicy: ['No refunds'],
-    status: 'published',
-  };
-
-  const mockBookings: Booking[] = [
-    {
-      id: 'booking_1',
-      tripId: 'trip_123',
-      batchId: 'b1',
-      packageName: 'Standard',
-      travelerName: 'John Doe',
-      travelerPhone: '+919876543210',
-      travelerEmail: 'john@example.com',
-      seats: 2,
-      totalPrice: 3000,
-      status: 'confirmed',
-      createdAt: Date.now() - 86400000, // Yesterday
-      bookingId: 'ATGL-12345678',
-    },
-    {
-      id: 'booking_2',
-      tripId: 'trip_123',
-      batchId: 'b1',
-      packageName: 'Standard',
-      travelerName: 'Jane Smith',
-      travelerPhone: '+919876543211',
-      travelerEmail: 'jane@example.com',
-      seats: 1,
-      totalPrice: 1500,
-      status: 'pending',
-      createdAt: Date.now(),
-      bookingId: 'ATGL-87654321',
-    },
-  ];
-
-  const mockExportData: ExportData = {
-    trip: mockTrip,
-    bookings: mockBookings,
-    exportDate: new Date('2024-01-15T10:30:00Z'),
-  };
-
   beforeEach(() => {
     jest.clearAllMocks();
     (Platform as any).OS = 'ios';
+    (Sharing.isAvailableAsync as jest.Mock).mockResolvedValue(true);
+    (Sharing.shareAsync as jest.Mock).mockResolvedValue(undefined);
+    (Print.printToFileAsync as jest.Mock).mockResolvedValue({ uri: '/mock/export.pdf' });
+    (FileSystem.writeAsStringAsync as jest.Mock).mockResolvedValue(undefined);
   });
 
   describe('exportToCSV', () => {
@@ -157,10 +174,11 @@ describe('Export Data Utility', () => {
       await exportToCSV(dataWithSpecialChars);
 
       const filePath = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls[0][0];
-      expect(filePath).not.toContain(':');
-      expect(filePath).not.toContain('/');
-      expect(filePath).not.toContain('!');
-      expect(filePath).toContain('LIVE__Trek___Version_2_0_');
+      const fileName = filePath.replace(FileSystem.documentDirectory, '');
+      expect(fileName).not.toContain(':');
+      expect(fileName).not.toContain('/');
+      expect(fileName).not.toContain('!');
+      expect(fileName).toContain('LIVE__Trek___Version_2_0_');
     });
 
     it('should share CSV file after creation', async () => {
@@ -365,6 +383,24 @@ describe('Web Export Behavior', () => {
     delete (global as any).Blob;
   });
 
-  // Web-specific tests would go here
-  // Note: These require more complex mocking of browser APIs
+  it('should export CSV on web by creating and triggering download link', async () => {
+    const result = await exportToCSV(mockExportData);
+    expect(result).toBe(true);
+    expect((global as any).document.createElement).toHaveBeenCalledWith('a');
+    expect((global as any).document.body.appendChild).toHaveBeenCalled();
+    expect((global as any).document.body.removeChild).toHaveBeenCalled();
+  });
+
+  it('should print PDF on web via window.open', async () => {
+    const result = await exportToPDF(mockExportData);
+    expect(result).toBe(true);
+    expect((global as any).window.open).toHaveBeenCalledWith('', '_blank');
+  });
+
+  it('should handle blocked popups for PDF print on web', async () => {
+    (global as any).window.open.mockReturnValueOnce(null);
+    const result = await exportToPDF(mockExportData);
+    expect(result).toBe(false);
+    expect(Alert.alert).toHaveBeenCalledWith('Error', 'Please allow popups to print/save PDF');
+  });
 });

@@ -25,7 +25,7 @@ import { openRazorpayCheckout, RazorpayCheckoutResult } from './razorpayCheckout
 // =====================================================
 // Dynamic Key fetched from Firestore doc 'config/platform' -> field 'platformRazorpayKey'
 const DEFAULT_PLATFORM_RAZORPAY_KEY = Constants.expoConfig?.extra?.platformRazorpayKey || 'rzp_test_TWSNTBjCjlxWVy';
-export const EXPORT_CHARGE = 1; // ₹1 per trip export
+export const EXPORT_CHARGE = 10; // ₹10 per trip export
 
 export const getPlatformRazorpayKey = async (): Promise<string> => {
   try {

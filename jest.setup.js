@@ -42,7 +42,7 @@ jest.mock('expo-constants', () => ({
 }));
 
 // Mock expo-file-system for export functionality
-jest.mock('expo-file-system', () => ({
+const mockFileSystem = {
   documentDirectory: '/mock/documents/',
   writeAsStringAsync: jest.fn(() => Promise.resolve()),
   readAsStringAsync: jest.fn(() => Promise.resolve('')),
@@ -51,7 +51,9 @@ jest.mock('expo-file-system', () => ({
     UTF8: 'utf8',
     Base64: 'base64',
   },
-}));
+};
+jest.mock('expo-file-system', () => mockFileSystem);
+jest.mock('expo-file-system/legacy', () => mockFileSystem);
 
 // Mock expo-sharing for export sharing
 jest.mock('expo-sharing', () => ({
@@ -82,5 +84,44 @@ jest.mock('react-native-razorpay', () => ({
   },
 }));
 
+// Global Firebase mocks
+jest.mock('./config/firebase', () => ({
+  db: {},
+  auth: {
+    currentUser: { uid: 'mock-user-1', email: 'test@example.com' },
+  },
+}));
+
+jest.mock('firebase/firestore', () => ({
+  collection: jest.fn((db, path) => ({ type: 'collection', path })),
+  doc: jest.fn((db, path, id) => ({ type: 'doc', path: id ? `${path}/${id}` : path })),
+  query: jest.fn((...args) => ({ type: 'query', args })),
+  where: jest.fn((field, op, value) => ({ type: 'where', field, op, value })),
+  orderBy: jest.fn((field, dir) => ({ type: 'orderBy', field, dir })),
+  limit: jest.fn((n) => ({ type: 'limit', limit: n })),
+  startAfter: jest.fn((doc) => ({ type: 'startAfter', doc })),
+  getDocs: jest.fn(() => Promise.resolve({ empty: true, docs: [], forEach: jest.fn() })),
+  getDoc: jest.fn(() => Promise.resolve({ exists: () => true, data: () => ({}) })),
+  addDoc: jest.fn(() => Promise.resolve({ id: 'mock-doc-id' })),
+  updateDoc: jest.fn(() => Promise.resolve()),
+  setDoc: jest.fn(() => Promise.resolve()),
+  deleteDoc: jest.fn(() => Promise.resolve()),
+  arrayUnion: jest.fn((...args) => args),
+  onSnapshot: jest.fn((ref, callback) => {
+    callback({ exists: () => true, data: () => ({}) });
+    return jest.fn(); // Unsubscribe
+  }),
+}));
+
+jest.mock('firebase/auth', () => ({
+  signInAnonymously: jest.fn(() => Promise.resolve({ user: { uid: 'anon-1' } })),
+  signInWithCredential: jest.fn(() => Promise.resolve({ user: { uid: 'cred-1', email: 'test@example.com' } })),
+  GoogleAuthProvider: {
+    credential: jest.fn(() => ({ providerId: 'google.com' })),
+  },
+  signOut: jest.fn(() => Promise.resolve()),
+}));
+
 // Global test utilities
 global.__DEV__ = true;
+

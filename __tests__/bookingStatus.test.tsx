@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { getDocs } from 'firebase/firestore';
 import BookingStatusScreen from '../app/booking-status';
 
@@ -45,12 +45,16 @@ describe('Booking Status Flow', () => {
   });
 
   it('shows error if booking ID is empty', async () => {
-    render(<BookingStatusScreen />);
+    await render(<BookingStatusScreen />);
     
     const trackBtn = screen.getByText('Track');
-    fireEvent.press(trackBtn);
+    await act(async () => {
+      fireEvent.press(trackBtn);
+    });
 
-    expect(screen.getByText('Please enter a valid Booking ID.')).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText('Please enter a valid Booking ID.')).toBeTruthy();
+    });
   });
 
   it('fetches and displays confirmed booking correctly', async () => {
@@ -70,13 +74,17 @@ describe('Booking Status Flow', () => {
       ],
     });
 
-    render(<BookingStatusScreen />);
+    await render(<BookingStatusScreen />);
     
     const input = screen.getByPlaceholderText('e.g. ATGL-XXXXX');
-    fireEvent.changeText(input, 'ORD-123');
+    await act(async () => {
+      fireEvent.changeText(input, 'ORD-123');
+    });
 
     const trackBtn = screen.getByText('Track');
-    fireEvent.press(trackBtn);
+    await act(async () => {
+      fireEvent.press(trackBtn);
+    });
 
     await waitFor(() => {
       expect(screen.getByText('BOOKING DETAILS')).toBeTruthy();
@@ -103,11 +111,17 @@ describe('Booking Status Flow', () => {
       ],
     });
 
-    render(<BookingStatusScreen />);
+    await render(<BookingStatusScreen />);
     
     const input = screen.getByPlaceholderText('e.g. ATGL-XXXXX');
-    fireEvent.changeText(input, 'ORD-123');
-    fireEvent.press(screen.getByText('Track'));
+    await act(async () => {
+      fireEvent.changeText(input, 'ORD-123');
+    });
+
+    const trackBtn = screen.getByText('Track');
+    await act(async () => {
+      fireEvent.press(trackBtn);
+    });
 
     await waitFor(() => {
       expect(screen.getByText('PENDING')).toBeTruthy();

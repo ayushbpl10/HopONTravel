@@ -35,15 +35,15 @@ describe('OfflineIndicator Component', () => {
     jest.clearAllMocks();
   });
 
-  it('renders nothing when online', () => {
+  it('renders nothing when online', async () => {
     mockUseAppContext.mockReturnValue({ isOnline: true });
-    const { toJSON } = render(<OfflineIndicator />) as any;
+    const { toJSON } = (await render(<OfflineIndicator />)) as any;
     expect(toJSON()).toBeNull();
   });
 
-  it('renders offline message when offline', () => {
+  it('renders offline message when offline', async () => {
     mockUseAppContext.mockReturnValue({ isOnline: false });
-    const { getByText } = render(<OfflineIndicator />) as any;
+    const { getByText } = (await render(<OfflineIndicator />)) as any;
     expect(getByText('No internet connection')).toBeTruthy();
   });
 });

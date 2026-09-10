@@ -286,6 +286,10 @@ describe('Platform Payment Service - Export Fees', () => {
 });
 
 describe('Platform vs Vendor Payment Separation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('platform payments should use PLATFORM key', async () => {
     (openRazorpayCheckout as jest.Mock).mockResolvedValue({ success: true, paymentId: 'pay_1' });
 

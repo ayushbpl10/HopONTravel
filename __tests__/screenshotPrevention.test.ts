@@ -81,7 +81,9 @@ describe('Screenshot Prevention Utility', () => {
 
     describe('Web Platform', () => {
       beforeEach(() => {
-        (Platform as any).OS = 'web';
+        jest.resetModules();
+        const RN = require('react-native');
+        RN.Platform.OS = 'web';
         (global as any).document = {
           body: {
             style: {} as CSSStyleDeclaration,
@@ -90,11 +92,12 @@ describe('Screenshot Prevention Utility', () => {
           removeEventListener: jest.fn(),
         };
         
-        jest.resetModules();
         screenshotPrevention = require('../utils/screenshotPrevention');
       });
 
       afterEach(() => {
+        const RN = require('react-native');
+        RN.Platform.OS = 'ios';
         delete (global as any).document;
       });
 
@@ -150,7 +153,9 @@ describe('Screenshot Prevention Utility', () => {
 
     describe('Web Platform', () => {
       beforeEach(() => {
-        (Platform as any).OS = 'web';
+        jest.resetModules();
+        const RN = require('react-native');
+        RN.Platform.OS = 'web';
         (global as any).document = {
           body: {
             style: { userSelect: 'none' } as CSSStyleDeclaration,
@@ -159,11 +164,12 @@ describe('Screenshot Prevention Utility', () => {
           removeEventListener: jest.fn(),
         };
         
-        jest.resetModules();
         screenshotPrevention = require('../utils/screenshotPrevention');
       });
 
       afterEach(() => {
+        const RN = require('react-native');
+        RN.Platform.OS = 'ios';
         delete (global as any).document;
       });
 
