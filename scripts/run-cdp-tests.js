@@ -1,9 +1,13 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
+const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const EDGE_PATH = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const CDP_PORT = 9222;
+const BROWSER_PATH = fs.existsSync(CHROME_PATH) ? CHROME_PATH : EDGE_PATH;
+const CDP_PORT = 9225;
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
@@ -40,6 +44,8 @@ class CDPClient {
         this.pending.delete(data.id);
         if (data.error) reject(data.error);
         else resolve(data.result);
+      } else if (data.method === 'Page.javascriptDialogOpening') {
+        this.send('Page.handleJavaScriptDialog', { accept: true }).catch(() => {});
       } else if (data.method === 'Runtime.exceptionThrown') {
         const desc = data.params.exceptionDetails.exception?.description || data.params.exceptionDetails.text;
         this.errors.push(desc);
@@ -81,17 +87,20 @@ class CDPClient {
 }
 
 async function main() {
-  console.log('🚀 Starting headless browser for end-to-end flow verification...');
-  const edgeProc = spawn(EDGE_PATH, [
+  console.log(`🚀 Starting headless browser (${path.basename(BROWSER_PATH)}) on port ${CDP_PORT}...`);
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'browser-cdp-'));
+  const browserProc = spawn(BROWSER_PATH, [
     '--headless=new',
     `--remote-debugging-port=${CDP_PORT}`,
+    '--remote-allow-origins=*',
+    `--user-data-dir=${userDataDir}`,
     '--disable-gpu',
     '--no-first-run',
     '--no-default-browser-check',
     'about:blank'
   ]);
 
-  edgeProc.on('error', err => console.error('Browser spawn error:', err));
+  browserProc.on('error', err => console.error('Browser spawn error:', err));
 
   // Wait for CDP to be available
   let versionInfo = null;
@@ -105,7 +114,7 @@ async function main() {
 
   if (!versionInfo) {
     console.error('❌ Could not connect to browser CDP port.');
-    edgeProc.kill();
+    browserProc.kill();
     process.exit(1);
   }
 
@@ -116,6 +125,14 @@ async function main() {
 
   await client.send('Runtime.enable');
   await client.send('Page.enable');
+  await client.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `
+      window.alert = function() {};
+      window.confirm = function() { return true; };
+      window.prompt = function() { return ''; };
+      window.print = function() {};
+    `
+  });
 
   const testResults = [];
 
@@ -491,7 +508,7 @@ async function main() {
 
       // Switch to bookings tab and verify table
       await client.eval('switchVendorTab("bookings")');
-      const rowsCount = await client.eval('document.querySelectorAll("#vendorBookingsTableBody tr").length');
+      const rowsCount = await client.eval('document.querySelectorAll("#vBookingsTableBody tr").length');
       if (rowsCount !== 3) throw new Error(`Expected 3 booking rows, found ${rowsCount}`);
 
       // Approve pending booking demo_vb_2
@@ -517,8 +534,11 @@ async function main() {
     });
 
   } finally {
-    client.close();
-    edgeProc.kill();
+    if (client) client.close();
+    browserProc.kill();
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true });
+    } catch (e) {}
   }
 
   console.log('\n========================================');
@@ -531,7 +551,7 @@ async function main() {
   }
 
   if (allPassed) {
-    console.log('\n🎉 ALL 6 WEB FLOW TESTS PASSED COMPLETELY WITHOUT ERRORS!');
+    console.log(`\n🎉 ALL ${testResults.length} WEB FLOW TESTS PASSED COMPLETELY WITHOUT ERRORS!`);
   } else {
     console.error('\n⚠️ Some web flow tests failed.');
     process.exit(1);
