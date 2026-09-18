@@ -1,6 +1,6 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -36,19 +36,24 @@ export default function BookingStatusScreen() {
       const q = query(collection(db, 'bookings'), where('bookingId', '==', cleanId.toUpperCase()));
       const snap = await getDocs(q);
 
-      if (snap.empty) {
-        // Fallback: Check if they entered the document ID instead of the custom bookingId
-        const q2 = query(collection(db, 'bookings'));
-        const allSnap = await getDocs(q2);
-        const found = allSnap.docs.find(d => d.id === cleanId || d.data().bookingId === cleanId);
-        
-        if (found) {
-          setBooking({ id: found.id, ...found.data() } as Booking);
-        } else {
-          setErrorMsg('Booking not found. Please check your Booking ID.');
-        }
-      } else {
+      if (!snap.empty) {
         setBooking({ id: snap.docs[0].id, ...snap.docs[0].data() } as Booking);
+      } else {
+        // Fallback 1: Direct document ID lookup
+        const docRef = doc(db, 'bookings', cleanId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setBooking({ id: docSnap.id, ...docSnap.data() } as Booking);
+        } else {
+          // Fallback 2: Check matching bookingId without toUpperCase
+          const qRaw = query(collection(db, 'bookings'), where('bookingId', '==', cleanId));
+          const snapRaw = await getDocs(qRaw);
+          if (!snapRaw.empty) {
+            setBooking({ id: snapRaw.docs[0].id, ...snapRaw.docs[0].data() } as Booking);
+          } else {
+            setErrorMsg('Booking not found. Please check your Booking ID.');
+          }
+        }
       }
     } catch (e) {
       console.error(e);

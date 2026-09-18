@@ -5,21 +5,24 @@ import { Trip } from '../data/trips';
 
 // Mock expo-router
 const mockRouterPush = jest.fn();
-jest.mock('expo-router', () => ({
-  __esModule: true,
-  Link: ({ children, href }: any) => {
-    // Clone child to inject simulated onPress
-    return React.cloneElement(children, {
-      onPress: () => mockRouterPush(href),
-    });
-  },
-  Stack: {
-    Screen: () => null,
-  },
-  router: {
-    push: (...args: any[]) => mockRouterPush(...args),
-  },
-}));
+jest.mock('expo-router', () => {
+  const React = require('react');
+  return {
+    __esModule: true,
+    Link: ({ children, href }: any) => {
+      // Clone child to inject simulated onPress
+      return React.cloneElement(children, {
+        onPress: () => mockRouterPush(href),
+      });
+    },
+    Stack: {
+      Screen: () => null,
+    },
+    router: {
+      push: (...args: any[]) => mockRouterPush(...args),
+    },
+  };
+});
 
 // Mock trips data
 const mockTrips: Trip[] = [

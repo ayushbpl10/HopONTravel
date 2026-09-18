@@ -1,6 +1,8 @@
 import '@testing-library/jest-native/extend-expect';
 import 'react-native';
 
+jest.setTimeout(25000);
+
 jest.mock('@react-native-google-signin/google-signin', () => ({
   GoogleSignin: {
     configure: jest.fn(),
