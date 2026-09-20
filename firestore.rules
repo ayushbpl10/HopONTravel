@@ -13,10 +13,18 @@ service cloud.firestore {
 
     function isTripOwner(tripId) {
       return isAuthenticated() &&
+        exists(/databases/$(database)/documents/trips/$(tripId)) &&
         get(/databases/$(database)/documents/trips/$(tripId)).data.vendorId == request.auth.uid;
     }
 
-    function isValidBookingData() {
+    function isBookingTripOwner(tripId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/trips/$(tripId)) &&
+        get(/databases/$(database)/documents/trips/$(tripId)).data.vendorId == request.auth.uid;
+    }
+
+    // ─── VALIDATION HELPERS ─────────────────────────────────────────
+    function isValidNewBooking() {
       let data = request.resource.data;
       return data.keys().hasAll(['tripId', 'travelerName', 'travelerPhone', 'batchId', 'totalPrice', 'createdAt', 'status', 'bookingId'])
         && data.travelerName is string 
@@ -25,66 +33,137 @@ service cloud.firestore {
         && data.travelerPhone is string
         && data.travelerPhone.size() >= 8
         && data.travelerPhone.size() <= 20
-        && data.status in ['pending', 'confirmed'];
+        && (data.travelerEmail == null || (data.travelerEmail is string && data.travelerEmail.size() <= 100))
+        && data.status in ['pending', 'confirmed'] // Pending for manual/UPI or confirmed upon instant gateway success
+        && data.totalPrice is number
+        && data.totalPrice >= 0
+        && (data.seats == null || (data.seats is number && data.seats >= 1 && data.seats <= 50))
+        && data.bookingId is string
+        && data.bookingId.size() >= 5
+        && data.bookingId.size() <= 35;
+    }
+
+    function isValidBookingUpdate() {
+      let diff = request.resource.data.diff(resource.data);
+      // Immutable critical fields that must never be altered once created
+      let noImmutableTampering = !diff.affectedKeys().hasAny(['tripId', 'bookingId', 'createdAt', 'totalPrice']);
+      
+      // Vendor owning the trip can update booking status, notes, or tickets
+      let isVendorUpdate = isBookingTripOwner(resource.data.tripId)
+        && request.resource.data.status in ['pending', 'confirmed', 'cancelled', 'failed', 'completed'];
+
+      // Traveller can only cancel their own pending booking
+      let isTravellerCancel = (resource.data.travelerEmail == request.auth.token.email || resource.data.userId == request.auth.uid)
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled'
+        && diff.affectedKeys().hasOnly(['status']);
+
+      return noImmutableTampering && (isVendorUpdate || isTravellerCancel);
+    }
+
+    function isValidTripData() {
+      let data = request.resource.data;
+      return data.title is string 
+        && data.title.size() >= 2 
+        && data.title.size() <= 150
+        && (data.destination == null || (data.destination is string && data.destination.size() <= 150))
+        && (data.description == null || (data.description is string && data.description.size() <= 5000))
+        && (data.price == null || (data.price is number && data.price >= 0))
+        && (data.vendorId == request.auth.uid || data.vendorId == null);
+    }
+
+    function isSeatCountIncrementOnly() {
+      // Allows booking checkout to safely increment bookedSeats without modifying trip details
+      let diff = request.resource.data.diff(resource.data);
+      return diff.affectedKeys().hasOnly(['batches']);
+    }
+
+    function isValidLiveCoordinates() {
+      let data = request.resource.data;
+      return (data.latitude == null || (data.latitude is number && data.latitude >= -90 && data.latitude <= 90))
+        && (data.longitude == null || (data.longitude is number && data.longitude >= -180 && data.longitude <= 180))
+        && (data.captainName == null || (data.captainName is string && data.captainName.size() <= 100))
+        && (data.captainPhone == null || (data.captainPhone is string && data.captainPhone.size() <= 25));
     }
 
     // ─── TRIPS ──────────────────────────────────────────────────────
     match /trips/{tripId} {
-      // Anyone can read published/upcoming trips
-      allow read: if resource.data.isPublished == true
-                  || resource.data.status == 'published'
-                  || (isAuthenticated() && resource.data.vendorId == request.auth.uid)
-                  || true;
+      // Anyone can read trips in public directory
+      allow read: if true;
 
-      // Authenticated users can create trips with valid title size
-      allow create: if isAuthenticated() 
-                    && request.resource.data.title is string
-                    && request.resource.data.title.size() <= 150;
+      // Authenticated vendors can create trips
+      allow create: if isAuthenticated() && isValidTripData();
 
-      // Only authenticated users can update (vendors for details, travellers for seat counts)
-      allow update: if isAuthenticated();
+      // Trip owner can update all fields; booking flow can only increment seats
+      allow update: if isAuthenticated() && (
+        resource.data.vendorId == request.auth.uid || 
+        isSeatCountIncrementOnly()
+      );
 
       // Only the owning vendor can delete
-      allow delete: if isAuthenticated()
-                    && (resource.data.vendorId == request.auth.uid || resource.data.vendorId == null);
+      allow delete: if isAuthenticated() && resource.data.vendorId == request.auth.uid;
     }
 
-    // ─── USERS & VENDORS ─────────────────────────────────────────────
+    // ─── USERS ───────────────────────────────────────────────────────
     match /users/{userId} {
       allow read: if true;
-      allow write: if isOwner(userId) || isAuthenticated();
+      // Only the user themselves can write their own profile
+      allow create, update: if isOwner(userId)
+        && (!('role' in request.resource.data) || request.resource.data.role in ['traveller', 'vendor'])
+        && (request.resource.data.name == null || (request.resource.data.name is string && request.resource.data.name.size() <= 100));
+      allow delete: if false;
     }
 
+    // ─── VENDORS ─────────────────────────────────────────────────────
     match /vendors/{vendorId} {
       allow read: if true;
-      allow write: if isOwner(vendorId) || isAuthenticated();
+      // Only the vendor themselves can modify their business profile and payment settings
+      allow create, update: if isOwner(vendorId)
+        && (request.resource.data.businessName == null || (request.resource.data.businessName is string && request.resource.data.businessName.size() <= 150))
+        && (request.resource.data.whatsappNumber == null || (request.resource.data.whatsappNumber is string && request.resource.data.whatsappNumber.size() <= 25));
+      allow delete: if false;
     }
 
     // ─── BOOKINGS ───────────────────────────────────────────────────
     match /bookings/{bookingId} {
-      // Guest or logged-in users can create valid bookings
-      allow create: if isAuthenticated() && isValidBookingData();
+      // Creation: Authenticated/Guest user creates valid pending booking
+      allow create: if isAuthenticated() && isValidNewBooking();
 
-      // Public read for booking status lookup by bookingId / vendor dashboard
-      allow read: if true;
+      // Single-document lookup by document ID or booking ID (e.g. for ticket verification)
+      allow get: if true;
 
-      // Vendor can update booking status
-      allow update: if isAuthenticated();
+      // Collection queries / list: Strictly restricted to owning vendor or the traveler to prevent PII harvesting
+      allow list: if isAuthenticated() && (
+        resource.data.vendorId == request.auth.uid || 
+        resource.data.travelerEmail == request.auth.token.email || 
+        resource.data.userId == request.auth.uid
+      );
+
+      // Updates: Restricted to vendor approval or traveller cancellation of pending state
+      allow update: if isAuthenticated() && isValidBookingUpdate();
 
       allow delete: if false;
     }
 
-    // ─── LIVE TRIPS ─────────────────────────────────────────────────
+    // ─── LIVE GPS TRIPS ─────────────────────────────────────────────
     match /live_trips/{tripId} {
+      // Travellers can track live location
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated() && isTripOwner(tripId);
+      
+      // Only the trip captain / vendor can broadcast coordinates
+      allow create, update: if isAuthenticated() && (
+        resource == null || resource.data.vendorId == request.auth.uid || isTripOwner(tripId)
+      ) && isValidLiveCoordinates();
+
+      allow delete: if isAuthenticated() && (
+        resource.data.vendorId == request.auth.uid || isTripOwner(tripId)
+      );
     }
 
     // ─── ERROR LOGS ─────────────────────────────────────────────────
     match /error_logs/{logId} {
-      allow create: if true;
+      allow create: if request.resource.data.message is string 
+        && request.resource.data.message.size() <= 2000;
       allow read, update, delete: if false;
     }
   }

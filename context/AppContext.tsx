@@ -21,7 +21,7 @@ import {
     updateDoc,
     where
 } from 'firebase/firestore';
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
 import { auth, db } from '../config/firebase';
 import { Booking, trips as initialTrips, Rating, Trip } from '../data/trips';
@@ -671,16 +671,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const bookTrip = async (booking: Omit<Booking, 'id'>) => {
-    // Ensure Firebase Auth is established (anonymous auth for guest bookings)
-    if (!auth.currentUser) {
-      await signInAnonymously(auth);
-    }
+  const bookingSubmissionLockRef = useRef(false);
 
-    const tripRef = doc(db, 'trips', booking.tripId);
-    // Bug Fix #4: Use getDoc for single-document fetch instead of scanning all trips
-    const tripDocSnap = await getDoc(tripRef);
-    let finalBooking = { ...booking };
+  const bookTrip = async (booking: Omit<Booking, 'id'>) => {
+    if (bookingSubmissionLockRef.current) {
+      console.warn('Booking submission in progress, ignoring duplicate call.');
+      return;
+    }
+    bookingSubmissionLockRef.current = true;
+
+    try {
+      if (!booking || !booking.tripId) {
+        throw new Error('Missing tripId in booking payload');
+      }
+
+      const cleanName = (booking.travelerName || '').trim();
+      if (cleanName.length < 2) {
+        throw new Error('Traveler name must be at least 2 characters.');
+      }
+
+      const cleanPhone = (booking.travelerPhone || '').trim();
+      if (cleanPhone.length < 8) {
+        throw new Error('Please enter a valid phone number.');
+      }
+
+      // Ensure Firebase Auth is established (anonymous auth for guest bookings)
+      if (!auth.currentUser) {
+        await signInAnonymously(auth);
+      }
+
+      const tripRef = doc(db, 'trips', booking.tripId);
+      const tripDocSnap = await getDoc(tripRef);
+      let finalBooking: any = {
+        ...booking,
+        travelerName: cleanName,
+        travelerPhone: cleanPhone,
+        seats: Math.max(1, Math.min(50, Number(booking.seats) || 1)),
+        totalPrice: Math.max(0, Number(booking.totalPrice) || 0),
+        status: booking.status === 'confirmed' ? 'confirmed' : 'pending',
+        createdAt: Number(booking.createdAt) || Date.now(),
+        bookingId: booking.bookingId || ('ATGL-' + Math.floor(10000 + Math.random() * 90000))
+      };
 
     if (tripDocSnap.exists()) {
       const trip = tripDocSnap.data() as Trip;
@@ -741,7 +772,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       await addDoc(collection(db, 'bookings'), finalBooking);
     }
-  };
+  } finally {
+    bookingSubmissionLockRef.current = false;
+  }
+};
 
   const updateBookingStatus = async (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled' | 'failed') => {
     // If demo booking or in demo vendor mode, update in-memory state directly
