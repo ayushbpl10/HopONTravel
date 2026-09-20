@@ -291,23 +291,62 @@ function verifyClientSideDefenses() {
   const vendorJs = fs.readFileSync(path.join(webDir, 'vendor-portal.js'), 'utf8');
   assert(vendorJs.includes('let _isSavingTrip = false;'), 'vendor-portal.js defines _isSavingTrip lock');
   assert(vendorJs.includes('if (_isSavingTrip) return;'), 'handleSaveTrip checks _isSavingTrip lock');
+  assert(vendorJs.includes('if (isDemoAccount())'), 'vendor-portal.js checks isDemoAccount() to block demo mutations');
+  assert(vendorJs.includes('showDemoAuthModal('), 'vendor-portal.js invokes showDemoAuthModal to prompt Google Sign-In');
   assert(vendorJs.includes("const allowedStatuses = ['confirmed', 'cancelled', 'pending', 'completed'];"), 
     'vendor-portal.js validates allowed status transitions');
 
-  // 4. context/AppContext.tsx
+  // 4. web/traveller.js
+  const travellerJs = fs.readFileSync(path.join(webDir, 'traveller.js'), 'utf8');
+  assert(travellerJs.includes('if (isDemoTraveller())'), 'traveller.js checks isDemoTraveller() to block demo profile mutations');
+  assert(travellerJs.includes('showDemoAuthModal('), 'traveller.js invokes showDemoAuthModal to prompt Google Sign-In');
+
+  // 5. context/AppContext.tsx
   const appContextTsx = fs.readFileSync(path.join(__dirname, '..', 'context', 'AppContext.tsx'), 'utf8');
   assert(appContextTsx.includes('const bookingSubmissionLockRef = useRef(false);'), 
     'AppContext.tsx implements bookingSubmissionLockRef concurrency lock');
   assert(appContextTsx.includes('if (bookingSubmissionLockRef.current)'), 
     'AppContext.tsx checks booking submission lock ref');
+  assert(appContextTsx.includes('class AppSecurityAttackThrottler'), 
+    'AppContext.tsx implements AppSecurityAttackThrottler');
+  assert(appContextTsx.includes('requireRealGoogleAccount('), 
+    'AppContext.tsx enforces requireRealGoogleAccount for demo users');
 
-  // 5. HTML Honeypot Inputs
+  // 6. HTML Modals & Honeypot Inputs
+  const vendorHtml = fs.readFileSync(path.join(webDir, 'vendor-portal.html'), 'utf8');
+  assert(vendorHtml.includes('id="demoAuthModalOverlay"'), 'vendor-portal.html contains #demoAuthModalOverlay');
+  assert(vendorHtml.includes('id="demoAuthModalGoogleBtn"'), 'vendor-portal.html contains Google Sign-In button in demo modal');
+
+  const travellerHtml = fs.readFileSync(path.join(webDir, 'traveller.html'), 'utf8');
+  assert(travellerHtml.includes('id="demoAuthModalOverlay"'), 'traveller.html contains #demoAuthModalOverlay');
+  assert(travellerHtml.includes('id="demoAuthModalGoogleBtn"'), 'traveller.html contains Google Sign-In button in demo modal');
+
   const indexHtml = fs.readFileSync(path.join(webDir, 'index.html'), 'utf8');
   assert(indexHtml.includes('id="hp_field"'), 'index.html contains hidden honeypot input');
   const tripHtml = fs.readFileSync(path.join(webDir, 'trip.html'), 'utf8');
   assert(tripHtml.includes('id="tb_hp_field"'), 'trip.html contains hidden honeypot input');
 
-  // 6. Test XSS sanitization logic
+  // 7. Security Throttler Logic Verification
+  console.log('  Testing SecurityThrottler attack detection & escalating lockout...');
+  const SecurityThrottler = require('../web/security-throttler.js');
+  SecurityThrottler.reset();
+  assert(!SecurityThrottler.isLockedOut(), 'SecurityThrottler initialized in unlocked state');
+  assert(SecurityThrottler.checkAndEnforce('test_op', { maxBurst: 3, lockoutMs: 30000 }), '1st operation allowed');
+  assert(SecurityThrottler.checkAndEnforce('test_op', { maxBurst: 3, lockoutMs: 30000 }), '2nd operation allowed');
+  assert(SecurityThrottler.checkAndEnforce('test_op', { maxBurst: 3, lockoutMs: 30000 }), '3rd operation allowed');
+  assert(!SecurityThrottler.checkAndEnforce('test_op', { maxBurst: 3, lockoutMs: 30000 }), '4th operation triggers attack lockout');
+  assert(SecurityThrottler.isLockedOut(), 'SecurityThrottler is in active lockout mode');
+  assert(SecurityThrottler.getRemainingLockoutSeconds() > 0, 'Remaining lockout seconds is positive');
+  SecurityThrottler.reset();
+  assert(!SecurityThrottler.isLockedOut(), 'SecurityThrottler reset clears lockout');
+
+  // 8. Server-side Attack Throttling in serve-web.js
+  const serveWebJs = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'serve-web.js'), 'utf8');
+  assert(serveWebJs.includes('ipLockouts'), 'serve-web.js maintains ipLockouts map');
+  assert(serveWebJs.includes('Blocked-Attack-Lockout'), 'serve-web.js sends Blocked-Attack-Lockout header during lockout');
+  assert(serveWebJs.includes('Attack-Protection-Triggered'), 'serve-web.js sends Attack-Protection-Triggered header on burst breach');
+
+  // 9. Test XSS sanitization logic
   console.log('  Testing XSS sanitization and entity escaping...');
   const testSandbox = {};
   vm.createContext(testSandbox);
@@ -569,10 +608,73 @@ async function runLiveBrowserTests() {
     `);
     assert(vendorSaveLock, 'Vendor Portal handleSaveTrip honors concurrency lock');
 
+    // TEST FLOW 6B: Demo Account Write Operations Rejection & Google Login Prompt Modal
+    console.log('  Flow 6B: Testing Demo Account Write Blocking & Google Login Prompt Modal...');
+    const demoTripSaveBlocked = await pageClient.eval(`
+      closeDemoAuthModal();
+      handleSaveTrip();
+      const modal = document.getElementById('demoAuthModalOverlay');
+      const isOpen = modal && modal.classList.contains('open');
+      const hasGoogleBtn = !!document.getElementById('demoAuthModalGoogleBtn');
+      const text = modal ? modal.textContent : '';
+      closeDemoAuthModal();
+      return { isOpen, hasGoogleBtn, hasPrompt: text.includes('Google Sign-In Required') };
+    `);
+    assert(demoTripSaveBlocked.isOpen, 'Demo Vendor save trip is blocked and opens #demoAuthModalOverlay');
+    assert(demoTripSaveBlocked.hasGoogleBtn, '#demoAuthModalOverlay contains Google Sign-In button');
+    assert(demoTripSaveBlocked.hasPrompt, '#demoAuthModalOverlay instructs demo user to sign in with Google');
+
+    const demoBookingStatusBlocked = await pageClient.eval(`
+      closeDemoAuthModal();
+      updateBookingStatus('demo_vb_1', 'confirmed');
+      const modal = document.getElementById('demoAuthModalOverlay');
+      const isOpen = modal && modal.classList.contains('open');
+      closeDemoAuthModal();
+      return isOpen;
+    `);
+    assert(demoBookingStatusBlocked, 'Demo Vendor booking status update is blocked and prompts Google login');
+
+    // TEST FLOW 6C: In-Browser Attack Throttling & Lockout Verification
+    console.log('  Flow 6C: Testing SecurityThrottler Attack Burst Lockout in Live DOM...');
+    const attackThrottleResult = await pageClient.eval(`
+      if (!window.SecurityThrottler) return { loaded: false };
+      SecurityThrottler.reset();
+      let blockedCount = 0;
+      const origAlert = window.alert;
+      window.alert = () => {};
+      for (let i = 0; i < 7; i++) {
+        const allowed = SecurityThrottler.checkAndEnforce('attack_test', { maxBurst: 4, lockoutMs: 30000 });
+        if (!allowed) blockedCount++;
+      }
+      window.alert = origAlert;
+      const locked = SecurityThrottler.isLockedOut();
+      const rem = SecurityThrottler.getRemainingLockoutSeconds();
+      SecurityThrottler.reset();
+      return { loaded: true, blockedCount, locked, rem };
+    `);
+    assert(attackThrottleResult.loaded, 'SecurityThrottler is loaded in Vendor Portal');
+    assert(attackThrottleResult.blockedCount >= 3, 'Rapid burst attack operations are blocked by SecurityThrottler');
+    assert(attackThrottleResult.locked, 'Attack pattern triggers active security lockout');
+    assert(attackThrottleResult.rem > 0, 'Attack lockout has active remaining duration countdown');
+
     // TEST FLOW 7: Traveller Portal Single Ticket Lookup Safety
     console.log('  Flow 7: Testing Traveller Portal Single Ticket Lookup...');
     await pageClient.send('Page.navigate', { url: `${BASE_URL}/traveller.html?bookingId=ATGL-55441` });
     await sleep(1500);
+
+    // Test Demo Traveller Profile Save Blocking
+    const demoTravellerSaveBlocked = await pageClient.eval(`
+      if (typeof loginAsDemoTraveller === 'function') loginAsDemoTraveller();
+      closeDemoAuthModal();
+      saveTravellerProfile();
+      const modal = document.getElementById('demoAuthModalOverlay');
+      const isOpen = modal && modal.classList.contains('open');
+      const text = modal ? modal.textContent : '';
+      closeDemoAuthModal();
+      return { isOpen, hasPrompt: text.includes('Google Sign-In Required') };
+    `);
+    assert(demoTravellerSaveBlocked.isOpen, 'Demo Traveller profile save is blocked and triggers #demoAuthModalOverlay');
+    assert(demoTravellerSaveBlocked.hasPrompt, 'Traveller demo modal instructs user to sign in with Google');
 
     const travellerLookup = await pageClient.eval(`
       const input = document.getElementById('quickBookingIdInput');
