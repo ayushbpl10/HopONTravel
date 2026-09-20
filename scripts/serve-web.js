@@ -17,7 +17,56 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon'
 };
 
+// Rate Limiting & Attack Mitigation Per Client IP
+const ipRequests = new Map(); // ip -> [timestamps]
+const ipLockouts = new Map(); // ip -> lockoutTimestamp
+const WINDOW_MS = 10000;      // 10s sliding window
+const MAX_REQUESTS = 120;     // Max 120 requests per 10s per IP (generous for asset loading, stops bots/scrapers)
+const LOCKOUT_MS = 60000;     // 60s attack lockout
+
 const server = http.createServer((req, res) => {
+  const clientIp = req.socket.remoteAddress || req.headers['x-forwarded-for'] || '127.0.0.1';
+  const now = Date.now();
+
+  // 1. Check active attack lockout
+  const lockoutUntil = ipLockouts.get(clientIp) || 0;
+  if (now < lockoutUntil) {
+    const retryAfter = Math.ceil((lockoutUntil - now) / 1000);
+    res.writeHead(429, {
+      'Content-Type': 'application/json',
+      'Retry-After': retryAfter,
+      'X-Security-Action': 'Blocked-Attack-Lockout'
+    });
+    return res.end(JSON.stringify({
+      error: 'Security Alert: Rate limit exceeded. Temporarily locked out.',
+      retryAfterSeconds: retryAfter
+    }));
+  }
+
+  // 2. Sliding window request tracking
+  let history = ipRequests.get(clientIp) || [];
+  history = history.filter(ts => now - ts < WINDOW_MS);
+
+  if (history.length >= MAX_REQUESTS) {
+    // Attack threshold breached -> lock out client
+    ipLockouts.set(clientIp, now + LOCKOUT_MS);
+    ipRequests.set(clientIp, history);
+    console.warn(`[SECURITY] Attack pattern detected from IP: ${clientIp}. Locked out for ${LOCKOUT_MS / 1000}s.`);
+    res.writeHead(429, {
+      'Content-Type': 'application/json',
+      'Retry-After': LOCKOUT_MS / 1000,
+      'X-Security-Action': 'Attack-Protection-Triggered'
+    });
+    return res.end(JSON.stringify({
+      error: 'Security Alert: Too many rapid requests detected. Your IP is temporarily blocked.',
+      retryAfterSeconds: LOCKOUT_MS / 1000
+    }));
+  }
+
+  history.push(now);
+  ipRequests.set(clientIp, history);
+
+  // 3. Static file handling
   const urlPath = req.url.split('?')[0];
   let relativePath = urlPath === '/' ? 'index.html' : urlPath.replace(/^\//, '');
   let filePath = path.join(WEB_DIR, relativePath);

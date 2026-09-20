@@ -210,6 +210,51 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+/**
+ * Sliding-window attack prevention and rate limiting for mobile app mutations.
+ */
+export class AppSecurityAttackThrottler {
+  private static timestamps: number[] = [];
+  private static lockoutUntil: number = 0;
+  private static lockoutSeconds: number = 60;
+  private static maxAllowedInWindow: number = 5;
+  private static windowMs: number = 15000;
+
+  static checkAndEnforce(actionName: string): boolean {
+    const now = Date.now();
+    if (now < this.lockoutUntil) {
+      const remaining = Math.ceil((this.lockoutUntil - now) / 1000);
+      Alert.alert(
+        '🚨 Security Alert: Attack Protection',
+        `Excessive requests detected. This action (${actionName}) is blocked. Please wait ${remaining}s before trying again.`
+      );
+      return false;
+    }
+
+    this.timestamps = this.timestamps.filter(ts => now - ts < this.windowMs);
+    if (this.timestamps.length >= this.maxAllowedInWindow) {
+      this.lockoutUntil = now + (this.lockoutSeconds * 1000);
+      Alert.alert(
+        '🚨 Attack Protection Activated',
+        `Multiple rapid requests detected. Your session has been temporarily locked for ${this.lockoutSeconds} seconds to prevent abuse.`
+      );
+      return false;
+    }
+
+    this.timestamps.push(now);
+    return true;
+  }
+
+  static isLockedOut(): boolean {
+    return Date.now() < this.lockoutUntil;
+  }
+
+  static reset(): void {
+    this.timestamps = [];
+    this.lockoutUntil = 0;
+  }
+}
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [vendorBookings, setVendorBookings] = useState<Booking[]>([]);
@@ -239,6 +284,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const interval = setInterval(checkNetwork, 30000); // Check every 30 seconds
     return () => clearInterval(interval);
   }, []);
+
+  const isDemoAccountUser = (): boolean => {
+    return (
+      userProfile?.id === DEMO_APP_VENDOR_USER.id ||
+      userProfile?.id === DEMO_APP_TRAVELLER_USER.id ||
+      Boolean(userProfile?.email && userProfile.email.includes('demo@hopontravel.com'))
+    );
+  };
+
+  const requireRealGoogleAccount = (actionName: string, roleHint: 'vendor' | 'traveller' = 'vendor'): boolean => {
+    if (isDemoAccountUser()) {
+      Alert.alert(
+        '🔐 Google Sign-In Required',
+        `You are exploring in Demo Mode. Demo accounts are strictly read-only. To ${actionName}, please connect your real account via Google Sign-In.`,
+        [
+          { text: 'Keep Exploring', style: 'cancel' },
+          { text: 'Sign in with Google', onPress: () => loginWithGoogle(roleHint) }
+        ]
+      );
+      return false;
+    }
+    return true;
+  };
 
   // 1. Initial Load of Trips (Paginated) - only 'published' trips
   const loadInitialTrips = useCallback(async () => {
@@ -593,6 +661,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateUserProfile = async (updates: Partial<UserProfile>) => {
+    if (!requireRealGoogleAccount('update your profile settings', userProfile?.role || 'vendor')) return;
+    if (!AppSecurityAttackThrottler.checkAndEnforce('update profile')) return;
+
     if (userProfile) {
       const updatedProfile = { ...userProfile, ...updates };
       
@@ -618,6 +689,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateTrip = async (tripId: string, updates: Partial<Trip>) => {
+    if (!requireRealGoogleAccount('update trip details', 'vendor')) return;
+    if (!AppSecurityAttackThrottler.checkAndEnforce('update trip')) return;
+
     const tripRef = doc(db, 'trips', tripId);
     await updateDoc(tripRef, updates);
     setTrips(prev => {
@@ -627,7 +701,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const addTrip = async (trip: Omit<Trip, 'id'>): Promise<Trip> => {
+  const addTrip = async (trip: Omit<Trip, 'id'>): Promise<Trip | void> => {
+    if (!requireRealGoogleAccount('create and publish new trips', 'vendor')) {
+      return;
+    }
+    if (!AppSecurityAttackThrottler.checkAndEnforce('create trip')) {
+      return;
+    }
+
     // Ensure Firebase Auth is established (vendor or anonymous session)
     if (!auth.currentUser) {
       try {
@@ -662,6 +743,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteTrip = async (tripId: string) => {
+    if (!requireRealGoogleAccount('delete trips', 'vendor')) return;
+    if (!AppSecurityAttackThrottler.checkAndEnforce('delete trip')) return;
+
     const tripRef = doc(db, 'trips', tripId);
     await deleteDoc(tripRef);
     setTrips(prev => {
@@ -676,6 +760,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const bookTrip = async (booking: Omit<Booking, 'id'>) => {
     if (bookingSubmissionLockRef.current) {
       console.warn('Booking submission in progress, ignoring duplicate call.');
+      return;
+    }
+    if (!requireRealGoogleAccount('submit bookings', 'traveller')) {
+      return;
+    }
+    if (!AppSecurityAttackThrottler.checkAndEnforce('submit booking')) {
       return;
     }
     bookingSubmissionLockRef.current = true;
@@ -778,9 +868,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 };
 
   const updateBookingStatus = async (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled' | 'failed') => {
-    // If demo booking or in demo vendor mode, update in-memory state directly
-    if (bookingId.startsWith('demo_') || userProfile?.id === DEMO_APP_VENDOR_USER.id) {
-      setVendorBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status } : b));
+    if (!requireRealGoogleAccount(`update booking status to ${status}`, 'vendor')) {
+      return;
+    }
+    if (!AppSecurityAttackThrottler.checkAndEnforce('update booking status')) {
       return;
     }
 
