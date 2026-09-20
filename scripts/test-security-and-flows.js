@@ -168,6 +168,11 @@ function verifyFirestoreRules() {
   assert(rules.includes('match /error_logs/{logId}'), 'Error logs collection match exists');
   assert(rules.includes('allow read, update, delete: if false;'), 'Error logs read/update/delete completely blocked');
 
+  // 7. System Config (reCAPTCHA and app runtime settings)
+  assert(rules.includes('match /system_config/{configId}'), 'System config collection match exists');
+  assert(rules.includes('allow read: if true;'), 'System config allows public read for client security keys');
+  assert(rules.includes('allow write: if false;'), 'System config client-side writes blocked');
+
   // Logical Simulation of Validation Predicates
   console.log('  Testing rule validator logic simulation...');
   // Simulate isValidNewBooking logic
@@ -248,6 +253,10 @@ function verifySecurityHeadersAndCSP() {
       assert(csp.includes('https://fonts.googleapis.com'), `${page} CSP allows Google Fonts`);
       assert(csp.includes('https://*.firebaseio.com'), `${page} CSP allows Firebase database connection`);
       assert(!csp.includes("'unsafe-eval'"), `${page} CSP does NOT allow unsafe-eval`);
+      if (page === 'index.html' || page === 'trip.html') {
+        assert(csp.includes('https://www.google.com/recaptcha/'), `${page} CSP allows Google reCAPTCHA`);
+        assert(csp.includes('https://www.gstatic.com/recaptcha/'), `${page} CSP allows gstatic reCAPTCHA`);
+      }
     }
 
     // 2. Nosniff
@@ -394,6 +403,37 @@ function verifyClientSideDefenses() {
 
   const sanitized = fns.sanitizeInput(xssPayload);
   assert(!sanitized.includes('<') && !sanitized.includes('>'), 'sanitizeInput strips angle brackets');
+
+  // 10. i18n Dictionary Integrity & Parity Across 4 Languages (en, hi, mr, kn)
+  console.log('  Testing i18n 4-language completeness (en, hi, mr, kn)...');
+  const i18nModule = require('../web/i18n.js');
+  const translations = i18nModule.AppTranslations;
+  const languages = ['en', 'hi', 'mr', 'kn'];
+  assert(!!translations, 'AppTranslations object loaded');
+  languages.forEach(lang => {
+    assert(!!translations[lang], `Language '${lang}' dictionary exists`);
+    assert(Object.keys(translations[lang]).length >= 100, `Language '${lang}' has extensive key coverage (${Object.keys(translations[lang]).length} keys)`);
+    // Verify hero_title has NO 🏔️🎒
+    const heroTitle = translations[lang]['hero_title'] || '';
+    assert(!heroTitle.includes('🏔️') && !heroTitle.includes('🎒'), `Language '${lang}' hero_title has removed 🏔️🎒 icons`);
+  });
+
+  // Verify key parity between languages
+  const enKeys = Object.keys(translations.en);
+  ['hi', 'mr', 'kn'].forEach(lang => {
+    const missingKeys = enKeys.filter(k => !translations[lang][k]);
+    assert(missingKeys.length === 0, `Language '${lang}' has 100% key parity with English (${missingKeys.length} missing)`);
+  });
+
+  // Verify index.html does not contain 🏔️🎒 in h1
+  const indexHtmlRaw = fs.readFileSync(path.join(webDir, 'index.html'), 'utf8');
+  assert(!indexHtmlRaw.includes('🏔️') && !indexHtmlRaw.includes('🎒'), 'index.html has removed 🏔️🎒 icons from main markup');
+
+  // 11. reCAPTCHA Config & Endpoints in serve-web.js
+  assert(serveWebJs.includes("RECAPTCHA_SITE_KEY = '6Lexm8UtAAAAABvf5IuhmCniieHVVpsqiuADIAPM'"), 'serve-web.js contains reCAPTCHA site key');
+  assert(serveWebJs.includes("RECAPTCHA_SECRET_KEY = '6Lexm8UtAAAAAKGNqPktfUbw-QlMOKDrq2J0pn79'"), 'serve-web.js contains reCAPTCHA secret key');
+  assert(serveWebJs.includes("urlPath === '/api/recaptcha-config'"), 'serve-web.js defines /api/recaptcha-config endpoint');
+  assert(serveWebJs.includes("urlPath === '/api/verify-recaptcha'"), 'serve-web.js defines /api/verify-recaptcha endpoint');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -705,6 +745,50 @@ async function runLiveBrowserTests() {
       `All buttons have accessible names (${a11yChecks.accessibleButtons}/${a11yChecks.totalButtons})`);
     assert(a11yChecks.accessibleInputs === a11yChecks.totalInputs, 
       `All visible inputs have accessible labels or placeholders (${a11yChecks.accessibleInputs}/${a11yChecks.totalInputs})`);
+
+    // TEST FLOW 9: reCAPTCHA Backend Endpoints and DOM Widget
+    console.log('  Flow 9: Testing reCAPTCHA API Endpoints and Widget Integration...');
+    const recaptchaConfig = await pageClient.eval(`
+      fetch('/api/recaptcha-config').then(r => r.json())
+    `);
+    assert(recaptchaConfig && recaptchaConfig.siteKey === '6Lexm8UtAAAAABvf5IuhmCniieHVVpsqiuADIAPM', 
+      'Live /api/recaptcha-config returns valid registered siteKey');
+
+    const recaptchaVerifyDummy = await pageClient.eval(`
+      fetch('/api/verify-recaptcha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: 'dummy-test-token' })
+      }).then(r => r.json())
+    `);
+    assert(recaptchaVerifyDummy && recaptchaVerifyDummy.success === false, 
+      'Live /api/verify-recaptcha rejects invalid token and connects to Google reCAPTCHA backend');
+
+    // TEST FLOW 10: 4-Language Live Switching & Icon Absence in DOM
+    console.log('  Flow 10: Testing Live Language Switching across all 4 languages (en, hi, mr, kn)...');
+    await pageClient.send('Page.navigate', { url: `${BASE_URL}/index.html` });
+    await sleep(1200);
+
+    const langTest = await pageClient.eval(`
+      const results = {};
+      const langs = ['en', 'hi', 'mr', 'kn'];
+      for (const l of langs) {
+        changeLanguage(l);
+        const titleEl = document.querySelector('[data-i18n="hero_title"]');
+        const titleText = titleEl ? titleEl.textContent : '';
+        const hasIcons = titleText.includes('🏔️') || titleText.includes('🎒');
+        const descEl = document.querySelector('[data-i18n="hero_desc"]');
+        const descText = descEl ? descEl.textContent : '';
+        results[l] = { titleText, hasIcons, hasDesc: descText.length > 5 };
+      }
+      changeLanguage('en');
+      return results;
+    `);
+
+    ['en', 'hi', 'mr', 'kn'].forEach(l => {
+      assert(langTest[l] && !langTest[l].hasIcons, `Live DOM for language '${l}' has no 🏔️🎒 icons`);
+      assert(langTest[l] && langTest[l].hasDesc, `Live DOM for language '${l}' successfully rendered localized description`);
+    });
 
     pageClient.close();
     browserClient.close();
