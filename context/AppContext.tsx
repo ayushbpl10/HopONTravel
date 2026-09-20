@@ -76,7 +76,7 @@ export interface VendorPaymentSettings {
   cashfreeAppId?: string; // For future Cashfree support
 }
 
-interface UserProfile {
+export interface UserProfile {
   id: string; 
   email: string;
   name: string;
@@ -90,6 +90,102 @@ interface UserProfile {
   termsAndConditions?: string;
 }
 
+export const DEMO_APP_TRAVELLER_USER: UserProfile = {
+  id: 'demo_traveller_uid',
+  email: 'pooja.demo@hopontravel.com',
+  name: 'Pooja Sharma (Demo Traveller)',
+  upiId: '',
+  whatsappNumber: '+91 98765 43210',
+  role: 'traveller'
+};
+
+export const DEMO_APP_VENDOR_USER: UserProfile = {
+  id: 'demo_vendor_sahyadri',
+  email: 'sahyadri.demo@hopontravel.com',
+  name: 'Sahyadri Trekkers (Demo Organiser)',
+  upiId: 'sahyadri.trekkers@okhdfcbank',
+  whatsappNumber: '+91 98765 43210',
+  role: 'vendor',
+  instagramUrl: 'https://instagram.com/sahyadri_trekkers',
+  termsAndConditions: 'Standard 48hr cancellation policy with 100% refund prior to 7 days.'
+};
+
+export const DEMO_APP_TRAVELLER_BOOKINGS: Booking[] = [
+  {
+    id: 'demo_booking_1',
+    bookingId: 'ATGL-78901',
+    tripId: 'demo',
+    batchId: 'b1',
+    packageName: 'Pune Transport Package',
+    travelerName: 'Pooja Sharma',
+    travelerPhone: '+91 98765 43210',
+    travelerEmail: 'pooja.demo@hopontravel.com',
+    seats: 2,
+    totalPrice: 2598,
+    status: 'confirmed',
+    createdAt: Date.now() - 86400000 * 2,
+  },
+  {
+    id: 'demo_booking_2',
+    bookingId: 'ATGL-45678',
+    tripId: 'rajmachi-demo',
+    batchId: 'b2',
+    packageName: 'Standard Camping',
+    travelerName: 'Pooja Sharma',
+    travelerPhone: '+91 98765 43210',
+    travelerEmail: 'pooja.demo@hopontravel.com',
+    seats: 1,
+    totalPrice: 1399,
+    status: 'pending',
+    createdAt: Date.now() - 86400000,
+  }
+];
+
+export const DEMO_APP_VENDOR_BOOKINGS: Booking[] = [
+  {
+    id: 'demo_vb_1',
+    bookingId: 'ATGL-78901',
+    tripId: 'demo',
+    batchId: 'b1',
+    packageName: 'Pune Transport Package',
+    travelerName: 'Pooja Sharma',
+    travelerPhone: '+91 98765 43210',
+    travelerEmail: 'pooja.demo@hopontravel.com',
+    seats: 2,
+    totalPrice: 2598,
+    status: 'confirmed',
+    createdAt: Date.now() - 86400000 * 2
+  },
+  {
+    id: 'demo_vb_2',
+    bookingId: 'ATGL-45678',
+    tripId: 'rajmachi-demo',
+    batchId: 'b2',
+    packageName: 'Standard Camping',
+    travelerName: 'Rahul Verma',
+    travelerPhone: '+91 98220 12345',
+    travelerEmail: 'rahul.verma@example.com',
+    seats: 1,
+    totalPrice: 1399,
+    status: 'pending',
+    createdAt: Date.now() - 86400000
+  },
+  {
+    id: 'demo_vb_3',
+    bookingId: 'ATGL-10293',
+    tripId: 'demo',
+    batchId: 'b1',
+    packageName: 'Mumbai Transport',
+    travelerName: 'Amit Desai',
+    travelerPhone: '+91 99887 66554',
+    travelerEmail: 'amit.desai@example.com',
+    seats: 4,
+    totalPrice: 5996,
+    status: 'confirmed',
+    createdAt: Date.now() - 86400000 * 3
+  }
+];
+
 interface AppContextType {
   trips: Trip[];
   vendorBookings: Booking[];
@@ -98,6 +194,7 @@ interface AppContextType {
   userProfile: UserProfile | null;
   loginWithGoogle: (role: 'vendor' | 'traveller') => Promise<void>;
   mockVendorLogin: () => Promise<void>;
+  mockTravellerLogin: () => Promise<void>;
   logout: () => Promise<void>;
   updateUserProfile: (updates: Partial<UserProfile>) => void;
   updateTrip: (tripId: string, updates: Partial<Trip>) => void;
@@ -212,6 +309,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (bookingsUnsubscribeRef.current) {
       bookingsUnsubscribeRef.current();
       bookingsUnsubscribeRef.current = null;
+    }
+
+    // Instantly populate demo bookings for demo vendor
+    if (vendorId === DEMO_APP_VENDOR_USER.id) {
+      setVendorBookings([...DEMO_APP_VENDOR_BOOKINGS]);
+      return;
     }
     
     const q = query(collection(db, 'bookings'), where('vendorId', '==', vendorId));
@@ -423,44 +526,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const mockTravellerLogin = async () => {
+    try {
+      if (Platform.OS === 'web') {
+        try {
+          await signInAnonymously(auth);
+        } catch (e) {
+          console.log('Anonymous sign-in non-fatal:', e);
+        }
+      }
+      const profile: UserProfile = { ...DEMO_APP_TRAVELLER_USER };
+      await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
+      await AsyncStorage.setItem('cached_bookings', JSON.stringify(DEMO_APP_TRAVELLER_BOOKINGS));
+      setUserProfile(profile);
+      Logger.setUserContext(profile.id, profile.email);
+      Alert.alert('⚡ Demo Traveller', 'Signed in as Pooja Sharma (Demo Traveller)!');
+    } catch (e: any) {
+      console.warn('Mock traveller login error:', e);
+      Alert.alert('Error', 'Mock login failed.');
+    }
+  };
+
   const mockVendorLogin = async () => {
     try {
       if (Platform.OS === 'web') {
         try {
           await signInAnonymously(auth);
         } catch (e) {
-          console.log('Anonymous sign-in failed, continuing with local mock:', e);
+          console.log('Anonymous sign-in non-fatal:', e);
         }
       }
 
-      const email = 'AbTohGhoomLe@gmail.com';
-      const name = 'Dev Vendor';
-      
-      const q = query(collection(db, 'vendors'));
-      const querySnapshot = await getDocs(q);
-      let existingVendor = querySnapshot.docs.find(doc => doc.data().email === email);
-
-      let profile: UserProfile;
-
-      if (existingVendor) {
-        profile = { id: existingVendor.id, ...existingVendor.data() } as UserProfile;
-      } else {
-        const newVendorRef = await addDoc(collection(db, 'vendors'), {
-          email,
-          name,
-          upiId: '',
-          whatsappNumber: '',
-          pushToken: '',
-          role: 'vendor'
-        });
-        profile = { id: newVendorRef.id, email, name, upiId: '', whatsappNumber: '', role: 'vendor' };
-      }
-
+      const profile: UserProfile = { ...DEMO_APP_VENDOR_USER };
       await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
       setUserProfile(profile);
-      loadVendorBookings(profile.id);
-      Alert.alert('Dev Login', 'Successfully mocked login on Web!');
-    } catch (e) {
+      setVendorBookings([...DEMO_APP_VENDOR_BOOKINGS]);
+      Logger.setUserContext(profile.id, profile.email);
+      Alert.alert('⚡ Demo Organiser', 'Signed in as Sahyadri Trekkers (Demo Organiser)!');
+    } catch (e: any) {
+      console.warn('Mock vendor login error:', e);
       Alert.alert('Error', 'Mock login failed.');
     }
   };
@@ -640,53 +744,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateBookingStatus = async (bookingId: string, status: 'pending' | 'confirmed' | 'cancelled' | 'failed') => {
-    const bookingRef = doc(db, 'bookings', bookingId);
-    
-    // Get booking details for notification
-    const bookingSnap = await getDoc(bookingRef);
-    const bookingData = bookingSnap.data();
-    
-    await updateDoc(bookingRef, { status });
-    
-    // Send push notification to traveller when booking is confirmed
-    if (status === 'confirmed' && bookingData?.travelerEmail) {
-      try {
-        // Find traveller by email to get their push token
-        const travellerQuery = query(collection(db, 'vendors'), where('email', '==', bookingData.travelerEmail));
-        const travellerSnap = await getDocs(travellerQuery);
-        
-        if (!travellerSnap.empty) {
-          const travellerToken = travellerSnap.docs[0].data().pushToken;
-          if (travellerToken) {
-            await fetch('https://exp.host/--/api/v2/push/send', {
-              method: 'POST',
-              headers: {
-                Accept: 'application/json',
-                'Accept-encoding': 'gzip, deflate',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                to: travellerToken,
-                sound: 'default',
-                title: 'Booking Confirmed! ✅',
-                body: `Your booking ${bookingData.bookingId || bookingId} has been confirmed. Get ready for your adventure!`,
-              }),
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to send confirmation notification:', e);
-      }
+    // If demo booking or in demo vendor mode, update in-memory state directly
+    if (bookingId.startsWith('demo_') || userProfile?.id === DEMO_APP_VENDOR_USER.id) {
+      setVendorBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status } : b));
+      return;
     }
-    
-    if (userProfile && userProfile.role === 'vendor') {
-      loadVendorBookings(userProfile.id);
+
+    try {
+      const bookingRef = doc(db, 'bookings', bookingId);
+      
+      // Get booking details for notification
+      const bookingSnap = await getDoc(bookingRef);
+      const bookingData = bookingSnap.data();
+      
+      await updateDoc(bookingRef, { status });
+      
+      // Send push notification to traveller when booking is confirmed
+      if (status === 'confirmed' && bookingData?.travelerEmail) {
+        try {
+          // Find traveller by email to get their push token
+          const travellerQuery = query(collection(db, 'vendors'), where('email', '==', bookingData.travelerEmail));
+          const travellerSnap = await getDocs(travellerQuery);
+          
+          if (!travellerSnap.empty) {
+            const travellerToken = travellerSnap.docs[0].data().pushToken;
+            if (travellerToken) {
+              await fetch('https://exp.host/--/api/v2/push/send', {
+                method: 'POST',
+                headers: {
+                  Accept: 'application/json',
+                  'Accept-encoding': 'gzip, deflate',
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  to: travellerToken,
+                  sound: 'default',
+                  title: 'Booking Confirmed! ✅',
+                  body: `Your booking ${bookingData.bookingId || bookingId} has been confirmed. Get ready for your adventure!`,
+                }),
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to send confirmation notification:', e);
+        }
+      }
+      
+      if (userProfile && userProfile.role === 'vendor') {
+        loadVendorBookings(userProfile.id);
+      }
+    } catch (err) {
+      console.warn('Status update fallback to state:', err);
+      setVendorBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status } : b));
     }
   };
 
 
   return (
-    <AppContext.Provider value={{ trips, vendorBookings, loading, loginLoading, userProfile, loginWithGoogle, mockVendorLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, fetchMoreTrips, hasMoreTrips, refreshTrips, isOnline }}>
+    <AppContext.Provider value={{ trips, vendorBookings, loading, loginLoading, userProfile, loginWithGoogle, mockVendorLogin, mockTravellerLogin, logout, updateUserProfile, updateTrip, addTrip, deleteTrip, bookTrip, updateBookingStatus, fetchMoreTrips, hasMoreTrips, refreshTrips, isOnline }}>
       {children}
     </AppContext.Provider>
   );

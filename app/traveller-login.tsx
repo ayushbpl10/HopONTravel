@@ -12,7 +12,7 @@ export default function TravellerLoginScreen() {
   const { colors, isDark } = useTheme();
   const styles = getStyles(colors);
   const { t } = useTranslation();
-  const { loginWithGoogle, loginLoading } = useAppContext();
+  const { loginWithGoogle, mockTravellerLogin, loginLoading } = useAppContext();
   const [localLoading, setLocalLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -28,6 +28,22 @@ export default function TravellerLoginScreen() {
     } catch (e: any) {
       Logger.error('Traveller login explicitly failed', e);
       Alert.alert('Login Failed', e?.message || 'Could not sign in with Google. Please try again.');
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
+  const handleDemoLogin = async () => {
+    setLocalLoading(true);
+    try {
+      await mockTravellerLogin();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/');
+      }
+    } catch (e: any) {
+      Alert.alert('Demo Error', e?.message || 'Could not start demo traveller session.');
     } finally {
       setLocalLoading(false);
     }
@@ -74,6 +90,15 @@ export default function TravellerLoginScreen() {
                 <Text style={styles.loginBtnText}>Continue with Google</Text>
               </>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.demoBtn, (loginLoading || localLoading) && { opacity: 0.7 }]} 
+            onPress={handleDemoLogin}
+            disabled={loginLoading || localLoading}
+          >
+            <FontAwesome name="bolt" size={20} color="#fff" style={{ marginRight: 10 }} />
+            <Text style={styles.demoBtnText}>⚡ Test as Demo Traveller</Text>
           </TouchableOpacity>
         </View>
       </ImageBackground>
@@ -141,6 +166,27 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
   loginBtnText: {
     color: colors.card,
     fontSize: 18,
+    fontWeight: 'bold',
+  },
+  demoBtn: {
+    flexDirection: 'row',
+    backgroundColor: '#10b981',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    marginTop: 16,
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  demoBtnText: {
+    color: '#ffffff',
+    fontSize: 16,
     fontWeight: 'bold',
   }
 });

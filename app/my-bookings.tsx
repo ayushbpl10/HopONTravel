@@ -7,7 +7,7 @@ import { useTheme, ThemeColors } from '../context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { db } from '../config/firebase';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext, DEMO_APP_TRAVELLER_BOOKINGS } from '../context/AppContext';
 import { Booking } from '../data/trips';
 
 export default function MyBookingsScreen() {
@@ -40,6 +40,13 @@ export default function MyBookingsScreen() {
   useEffect(() => {
     const fetchBookings = async () => {
       if (!userProfile?.id) {
+        setLoading(false);
+        return;
+      }
+
+      // Instant demo traveller bypass
+      if (userProfile.id === 'demo_traveller_uid' || userProfile.email === 'pooja.demo@hopontravel.com') {
+        setBookings(DEMO_APP_TRAVELLER_BOOKINGS);
         setLoading(false);
         return;
       }
