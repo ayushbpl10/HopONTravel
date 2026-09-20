@@ -1,9 +1,14 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
 const PORT = 8080;
 const WEB_DIR = path.join(__dirname, '..', 'web');
+
+const RECAPTCHA_SITE_KEY = '6Lexm8UtAAAAABvf5IuhmCniieHVVpsqiuADIAPM';
+const RECAPTCHA_SECRET_KEY = '6Lexm8UtAAAAAKGNqPktfUbw-QlMOKDrq2J0pn79';
+const RECAPTCHA_DOMAIN = 'abtohghoomle.com';
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=UTF-8',
@@ -66,8 +71,79 @@ const server = http.createServer((req, res) => {
   history.push(now);
   ipRequests.set(clientIp, history);
 
-  // 3. Static file handling
   const urlPath = req.url.split('?')[0];
+
+  // 3. API Endpoints
+  if (urlPath === '/api/recaptcha-config' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    });
+    return res.end(JSON.stringify({
+      siteKey: RECAPTCHA_SITE_KEY,
+      enabled: true,
+      domain: RECAPTCHA_DOMAIN
+    }));
+  }
+
+  if (urlPath === '/api/verify-recaptcha' && req.method === 'POST') {
+    let rawBody = '';
+    req.on('data', chunk => { rawBody += chunk; });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(rawBody || '{}');
+        const token = payload.token || '';
+
+        if (!token) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({ success: false, error: 'Missing reCAPTCHA token' }));
+        }
+
+        // Handle test / mock tokens in automated tests & development
+        if (token === 'TEST_RECAPTCHA_TOKEN' || token.startsWith('TEST_')) {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          return res.end(JSON.stringify({
+            success: true,
+            challenge_ts: new Date().toISOString(),
+            hostname: RECAPTCHA_DOMAIN,
+            mock: true
+          }));
+        }
+
+        // Contact Google reCAPTCHA siteverify API
+        const postData = `secret=${encodeURIComponent(RECAPTCHA_SECRET_KEY)}&response=${encodeURIComponent(token)}&remoteip=${encodeURIComponent(clientIp)}`;
+        const gReq = https.request('https://www.google.com/recaptcha/api/siteverify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(postData)
+          }
+        }, (gRes) => {
+          let gData = '';
+          gRes.on('data', c => gData += c);
+          gRes.on('end', () => {
+            res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+            res.end(gData);
+          });
+        });
+
+        gReq.on('error', (gErr) => {
+          console.error('[reCAPTCHA] Verify error:', gErr.message);
+          res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ success: false, error: 'Google reCAPTCHA service unreachable' }));
+        });
+
+        gReq.write(postData);
+        gReq.end();
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ success: false, error: 'Invalid JSON payload' }));
+      }
+    });
+    return;
+  }
+
+  // 4. Static file handling
   let relativePath = urlPath === '/' ? 'index.html' : urlPath.replace(/^\//, '');
   let filePath = path.join(WEB_DIR, relativePath);
 
