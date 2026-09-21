@@ -46,26 +46,16 @@ let mockUserProfile: any = {
   role: 'traveller',
 };
 const mockLogout = jest.fn();
-const mockDemoBookings = [
-  {
-    id: 'demo_booking_1',
-    bookingId: 'ATGL-DEMO-99',
-    travelerName: 'Pooja Sharma',
-    packageName: 'Weekend Pass',
-    seats: 1,
-    totalPrice: 2000,
-    status: 'confirmed',
-    createdAt: 1000,
-  }
-];
-
-jest.mock('../context/AppContext', () => ({
-  useAppContext: () => ({
-    userProfile: mockUserProfile,
-    logout: mockLogout,
-  }),
-  DEMO_APP_TRAVELLER_BOOKINGS: mockDemoBookings,
-}));
+jest.mock('../context/AppContext', () => {
+  const actual = jest.requireActual('../context/AppContext');
+  return {
+    ...actual,
+    useAppContext: () => ({
+      userProfile: mockUserProfile,
+      logout: mockLogout,
+    }),
+  };
+});
 
 // Mock ThemeContext
 jest.mock('../context/ThemeContext', () => ({

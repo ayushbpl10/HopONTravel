@@ -86,6 +86,21 @@ describe('Payment Service - Vendor Payments', () => {
       expect(result.gateway).toBe('manual');
     });
 
+    it('should return error when gateway is unknown', async () => {
+      const options = {
+        ...baseOptions,
+        vendorPaymentConfig: {
+          enabled: true,
+          gateway: 'unknown_gateway' as any,
+        },
+      };
+
+      const result = await initiateVendorPayment(options);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Unknown payment gateway');
+    });
+
     it('should return error when vendor Razorpay key is missing', async () => {
       const options = {
         ...baseOptions,
