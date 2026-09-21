@@ -172,6 +172,44 @@ describe('Booking Status Flow', () => {
     });
   });
 
+  it('finds booking via fallback 2 with raw casing query', async () => {
+    // 1st query uppercase is empty
+    (getDocs as jest.Mock).mockResolvedValueOnce({ empty: true, docs: [] });
+    // doc lookup is empty
+    mockGetDoc.mockResolvedValueOnce({ exists: () => false });
+    // 2nd query raw casing finds it
+    (getDocs as jest.Mock).mockResolvedValueOnce({
+      empty: false,
+      docs: [
+        {
+          id: 'raw_123',
+          data: () => ({
+            bookingId: 'raw_casing_id',
+            travelerName: 'Raw Casing User',
+            status: 'confirmed',
+            totalPrice: 1600,
+            packageName: 'Standard',
+          }),
+        },
+      ],
+    });
+
+    await render(<BookingStatusScreen />);
+    const input = screen.getByPlaceholderText('e.g. ATGL-XXXXX');
+    await act(async () => {
+      fireEvent.changeText(input, 'raw_casing_id');
+    });
+    const trackBtn = screen.getByText('Track');
+    await act(async () => {
+      fireEvent.press(trackBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Raw Casing User')).toBeTruthy();
+      expect(screen.getByText('CONFIRMED')).toBeTruthy();
+    });
+  });
+
   it('shows error when booking is not found across all fallbacks', async () => {
     (getDocs as jest.Mock).mockResolvedValueOnce({ empty: true, docs: [] });
     mockGetDoc.mockResolvedValueOnce({ exists: () => false });
@@ -287,6 +325,18 @@ describe('Booking Status Flow', () => {
       fireEvent.press(logoutBtn);
     });
     expect(mockLogout).toHaveBeenCalled();
+    mockUserProfile = null;
+  });
+
+  it('handles error when fetching user bookings fails', async () => {
+    mockUserProfile = { role: 'traveller', email: 'traveller@user.com' };
+    (getDocs as jest.Mock).mockRejectedValueOnce(new Error('Fetch failed'));
+
+    await render(<BookingStatusScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('My Bookings')).toBeTruthy();
+    });
     mockUserProfile = null;
   });
 });
