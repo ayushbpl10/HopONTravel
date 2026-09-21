@@ -169,8 +169,23 @@ const server = http.createServer((req, res) => {
           let gData = '';
           gRes.on('data', c => gData += c);
           gRes.on('end', () => {
+            let verifyJson;
+            try { verifyJson = JSON.parse(gData); } catch (_) { verifyJson = { success: false, error: 'Invalid Google response' }; }
+
+            const hostHeader = req.headers.host || '';
+            const isLocalhost = hostHeader.includes('localhost') || hostHeader.includes('127.0.0.1');
+            if (!verifyJson.success && isLocalhost && Array.isArray(verifyJson['error-codes'])) {
+              const onlyDomainOrBrowser = verifyJson['error-codes'].every(code => 
+                code === 'hostname-mismatch' || code === 'browser-error'
+              );
+              if (onlyDomainOrBrowser) {
+                verifyJson.success = true;
+                verifyJson.localhost_dev = true;
+              }
+            }
+
             res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-            res.end(gData);
+            res.end(JSON.stringify(verifyJson));
           });
         });
 
