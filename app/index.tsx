@@ -27,6 +27,7 @@ const AnimatedCard = ({ trip, t, isWishlisted, onToggleWishlist, colors, styles 
   return (
     <Link href={`/trip/${trip.id}`} asChild>
       <TouchableOpacity 
+        testID={`trip-card-${trip.id}`}
         activeOpacity={0.9}
         onPressIn={() => Animated.spring(scale, { toValue: 0.96, useNativeDriver: false }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: false }).start()}
@@ -38,6 +39,7 @@ const AnimatedCard = ({ trip, t, isWishlisted, onToggleWishlist, colors, styles 
             imageStyle={{ borderRadius: 20 }}
           >
             <TouchableOpacity 
+              testID={`trip-wishlist-${trip.id}`}
               style={styles.wishlistBtn}
               onPress={(e) => { e.preventDefault(); e.stopPropagation(); onToggleWishlist(trip.id); }}
             >
@@ -167,6 +169,7 @@ export default function HomeScreen() {
         </View>
 
         <TouchableOpacity 
+          testID="hero-wishlist-button"
           style={styles.heroWishlistBtn}
           onPress={() => router.push('/wishlist' as any)}
         >

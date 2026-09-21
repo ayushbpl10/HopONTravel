@@ -119,6 +119,9 @@ const mockTrips: Trip[] = [
   },
 ];
 
+let mockLoading = false;
+let mockHasMoreTrips = false;
+const mockFetchMoreTrips = jest.fn();
 const mockToggleWishlist = jest.fn();
 let mockWishlist: string[] = ['trip_1'];
 const mockRefreshTrips = jest.fn(() => Promise.resolve());
@@ -126,9 +129,9 @@ const mockRefreshTrips = jest.fn(() => Promise.resolve());
 jest.mock('../context/AppContext', () => ({
   useAppContext: () => ({
     trips: mockTrips,
-    loading: false,
-    fetchMoreTrips: jest.fn(),
-    hasMoreTrips: false,
+    loading: mockLoading,
+    fetchMoreTrips: mockFetchMoreTrips,
+    hasMoreTrips: mockHasMoreTrips,
     refreshTrips: mockRefreshTrips,
   }),
 }));
@@ -160,6 +163,8 @@ describe('Home Explore Flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockWishlist = ['trip_1'];
+    mockLoading = false;
+    mockHasMoreTrips = false;
   });
 
   it('renders list of published trips with details and badges', async () => {
@@ -281,6 +286,15 @@ describe('Home Explore Flow', () => {
       fireEvent.press(anywhereOpt);
     });
 
+    // Open Destination modal again and select Pune
+    await act(async () => {
+      fireEvent.press(destDropdown);
+    });
+    const puneOpt = screen.getByText('Pune');
+    await act(async () => {
+      fireEvent.press(puneOpt);
+    });
+
     // Price modal
     const priceDropdown = screen.getByText('All');
     await act(async () => {
@@ -291,30 +305,63 @@ describe('Home Explore Flow', () => {
       fireEvent.press(under1k);
     });
 
+    // Open Category modal and select All Trips
+    const catDropdown = screen.getByText('Category');
+    await act(async () => {
+      fireEvent.press(catDropdown);
+    });
+    const allTripsOpt = screen.getByText('All Trips');
+    await act(async () => {
+      fireEvent.press(allTripsOpt);
+    });
+
     // Hero wishlist button
-    const heroWishlistBtn = screen.getByText('Ab Toh Ghoom Le!').parent?.parent?.findAllByType(TouchableOpacity).find((el: any) => el.props.style?.position === 'absolute');
-    if (heroWishlistBtn) {
-      await act(async () => {
-        fireEvent.press(heroWishlistBtn);
-      });
-      expect(mockRouterPush).toHaveBeenCalledWith('/wishlist');
-    }
+    const heroWishlistBtn = screen.getByTestId('hero-wishlist-button');
+    await act(async () => {
+      fireEvent.press(heroWishlistBtn);
+    });
+    expect(mockRouterPush).toHaveBeenCalledWith('/wishlist');
+  });
+
+  it('handles card interactions and wishlist toggling', async () => {
+    await render(<HomeScreen />);
+
+    // Press in and out on trip card
+    const card = screen.getByTestId('trip-card-trip_1');
+    await act(async () => {
+      fireEvent(card, 'pressIn');
+      fireEvent(card, 'pressOut');
+    });
+
+    // Toggle wishlist
+    const wishlistBtn = screen.getByTestId('trip-wishlist-trip_1');
+    await act(async () => {
+      fireEvent.press(wishlistBtn);
+    });
+    expect(mockToggleWishlist).toHaveBeenCalledWith('trip_1');
   });
 
   it('triggers refresh and pagination on flatlist', async () => {
-    const { getByText } = (await render(<HomeScreen />)) as any;
+    mockHasMoreTrips = true;
+    const { UNSAFE_getByType } = (await render(<HomeScreen />)) as any;
 
-    // Refresh control
+    // Trigger FlatList refresh
+    const flatList = UNSAFE_getByType(require('react-native').FlatList);
     await act(async () => {
-      await mockRefreshTrips();
+      await flatList.props.refreshControl.props.onRefresh();
     });
     expect(mockRefreshTrips).toHaveBeenCalled();
 
-    // Card press in and out
-    const card = getByText('Harishchandragad Trek');
+    // Trigger FlatList pagination
     await act(async () => {
-      fireEvent(card, 'responderGrant');
-      fireEvent(card, 'responderRelease');
+      flatList.props.onEndReached();
     });
+    expect(mockFetchMoreTrips).toHaveBeenCalled();
+  });
+
+  it('renders skeleton loading screen when loading is true', async () => {
+    mockLoading = true;
+    const { toJSON } = (await render(<HomeScreen />)) as any;
+    expect(toJSON()).toBeTruthy();
   });
 });
