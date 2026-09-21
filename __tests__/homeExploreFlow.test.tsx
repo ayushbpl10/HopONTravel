@@ -343,10 +343,10 @@ describe('Home Explore Flow', () => {
 
   it('triggers refresh and pagination on flatlist', async () => {
     mockHasMoreTrips = true;
-    const { UNSAFE_getByType } = (await render(<HomeScreen />)) as any;
+    await render(<HomeScreen />);
 
     // Trigger FlatList refresh
-    const flatList = UNSAFE_getByType(require('react-native').FlatList);
+    const flatList = screen.getByTestId('trips-flat-list');
     await act(async () => {
       await flatList.props.refreshControl.props.onRefresh();
     });
@@ -357,6 +357,40 @@ describe('Home Explore Flow', () => {
       flatList.props.onEndReached();
     });
     expect(mockFetchMoreTrips).toHaveBeenCalled();
+  });
+
+  it('handles dismissing modals via overlay taps', async () => {
+    await render(<HomeScreen />);
+
+    // Open Category modal and tap overlay
+    const catDropdown = screen.getByText('Category');
+    await act(async () => {
+      fireEvent.press(catDropdown);
+    });
+    const catOverlay = screen.getByTestId('category-modal-overlay');
+    await act(async () => {
+      fireEvent.press(catOverlay);
+    });
+
+    // Open Destination modal and tap overlay
+    const destDropdown = screen.getByText('Destination');
+    await act(async () => {
+      fireEvent.press(destDropdown);
+    });
+    const destOverlay = screen.getByTestId('destination-modal-overlay');
+    await act(async () => {
+      fireEvent.press(destOverlay);
+    });
+
+    // Open Price modal and tap overlay
+    const priceDropdown = screen.getByText('All');
+    await act(async () => {
+      fireEvent.press(priceDropdown);
+    });
+    const priceOverlay = screen.getByTestId('price-modal-overlay');
+    await act(async () => {
+      fireEvent.press(priceOverlay);
+    });
   });
 
   it('renders skeleton loading screen when loading is true', async () => {

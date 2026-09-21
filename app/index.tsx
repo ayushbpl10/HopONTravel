@@ -197,6 +197,7 @@ export default function HomeScreen() {
 
       {/* Trip List */}
       <FlatList
+        testID="trips-flat-list"
         data={filteredTrips}
         keyExtractor={(item) => item.id}
         contentContainerStyle={filteredTrips.length === 0 ? styles.emptyContainer : styles.listContainer}
@@ -224,7 +225,7 @@ export default function HomeScreen() {
 
       {/* Dropdown Modals */}
       <Modal visible={showCategoryModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCategoryModal(false)}>
+        <TouchableOpacity testID="category-modal-overlay" style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCategoryModal(false)}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Category</Text>
             <ScrollView style={{ maxHeight: 300 }}>
@@ -242,7 +243,7 @@ export default function HomeScreen() {
       </Modal>
 
       <Modal visible={showDestinationModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDestinationModal(false)}>
+        <TouchableOpacity testID="destination-modal-overlay" style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDestinationModal(false)}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Destination</Text>
             <ScrollView style={{ maxHeight: 300 }}>
@@ -260,7 +261,7 @@ export default function HomeScreen() {
       </Modal>
 
       <Modal visible={showPriceModal} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPriceModal(false)}>
+        <TouchableOpacity testID="price-modal-overlay" style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPriceModal(false)}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Price Range</Text>
             <ScrollView style={{ maxHeight: 300 }}>
