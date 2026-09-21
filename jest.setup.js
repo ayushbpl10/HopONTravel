@@ -3,6 +3,25 @@ import 'react-native';
 
 jest.setTimeout(25000);
 
+const asyncStorageStore = new Map();
+const mockAsyncStorage = {
+  getItem: jest.fn((key) => Promise.resolve(asyncStorageStore.has(key) ? asyncStorageStore.get(key) : null)),
+  setItem: jest.fn((key, value) => {
+    asyncStorageStore.set(key, String(value));
+    return Promise.resolve();
+  }),
+  removeItem: jest.fn((key) => {
+    asyncStorageStore.delete(key);
+    return Promise.resolve();
+  }),
+  clear: jest.fn(() => {
+    asyncStorageStore.clear();
+    return Promise.resolve();
+  }),
+  getAllKeys: jest.fn(() => Promise.resolve(Array.from(asyncStorageStore.keys()))),
+};
+jest.mock('@react-native-async-storage/async-storage', () => mockAsyncStorage);
+
 jest.mock('@react-native-google-signin/google-signin', () => ({
   GoogleSignin: {
     configure: jest.fn(),
