@@ -187,4 +187,54 @@ describe('My Bookings Flow', () => {
     );
     expect(mockLogout).toHaveBeenCalled();
   });
+
+  it('loads demo bookings when demo traveller is logged in', async () => {
+    mockUserProfile = {
+      id: 'demo_traveller_uid',
+      name: 'Pooja Sharma',
+      email: 'pooja.demo@hopontravel.com',
+      role: 'traveller',
+    };
+
+    await render(<MyBookingsScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Pooja Sharma')).toBeTruthy();
+      expect(screen.getByText('CONFIRMED')).toBeTruthy();
+    });
+  });
+
+  it('loads cached bookings from AsyncStorage when available', async () => {
+    const AsyncStorage = require('@react-native-async-storage/async-storage');
+    AsyncStorage.getItem.mockResolvedValueOnce(JSON.stringify([
+      {
+        id: 'cached_1',
+        bookingId: 'ATGL-CACHED99',
+        travelerName: 'Cached User',
+        travelerEmail: 'rahul@example.com',
+        packageName: 'Cached Tent',
+        seats: 1,
+        totalPrice: 1500,
+        status: 'confirmed',
+        createdAt: 1000,
+      }
+    ]));
+
+    await render(<MyBookingsScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('ID: ATGL-CACHED99')).toBeTruthy();
+    });
+  });
+
+  it('handles error gracefully when firestore query fails', async () => {
+    const { getDocs } = require('firebase/firestore');
+    getDocs.mockRejectedValueOnce(new Error('Network error'));
+
+    await render(<MyBookingsScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Rahul Sharma')).toBeTruthy();
+    });
+  });
 });
