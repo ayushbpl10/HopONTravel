@@ -129,7 +129,7 @@ jest.mock('firebase/firestore', () => ({
   deleteDoc: jest.fn(() => Promise.resolve()),
   arrayUnion: jest.fn((...args) => args),
   onSnapshot: jest.fn((ref, callback) => {
-    callback({ exists: () => true, data: () => ({}) });
+    callback({ exists: () => true, data: () => ({}), forEach: jest.fn(), docs: [] });
     return jest.fn(); // Unsubscribe
   }),
 }));

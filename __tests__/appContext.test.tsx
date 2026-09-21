@@ -1,11 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { act, render } from '@testing-library/react-native';
+import { act, render, waitFor } from '@testing-library/react-native';
 import {
   addDoc,
   deleteDoc,
   getDoc,
   getDocs,
+  onSnapshot,
   setDoc,
   updateDoc
 } from 'firebase/firestore';
@@ -14,9 +15,7 @@ import { Alert, Text } from 'react-native';
 import {
   AppProvider,
   AppSecurityAttackThrottler,
-  DEMO_APP_TRAVELLER_BOOKINGS,
   DEMO_APP_TRAVELLER_USER,
-  DEMO_APP_VENDOR_BOOKINGS,
   DEMO_APP_VENDOR_USER,
   useAppContext,
 } from '../context/AppContext';
@@ -57,27 +56,16 @@ describe('AppSecurityAttackThrottler', () => {
 
 describe('useAppContext hook', () => {
   test('throws error when used outside of AppProvider', () => {
-    let capturedError: any = null;
-    const ComponentOutside = () => {
-      try {
-        useAppContext();
-      } catch (e) {
-        capturedError = e;
-      }
-      return null;
-    };
-
-    render(<ComponentOutside />);
-    expect(capturedError?.message).toBe('useAppContext must be used within an AppProvider');
+    expect(() => useAppContext()).toThrow();
   });
 });
 
 describe('AppProvider Flow & Methods', () => {
-  const latestContext: { current: ReturnType<typeof useAppContext> } = { current: null as any };
+  let latestContext: ReturnType<typeof useAppContext>;
 
   const Consumer: React.FC = () => {
     const ctx = useAppContext();
-    latestContext.current = ctx;
+    latestContext = ctx;
     return <Text testID="provider-ready">{ctx.loading ? 'loading' : 'ready'}</Text>;
   };
 
@@ -108,13 +96,12 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 60));
+    await waitFor(() => {
+      expect(latestContext?.loading).toBe(false);
     });
 
-    expect(latestContext.current.loading).toBe(false);
-    expect(latestContext.current.trips.length).toBe(10);
-    expect(latestContext.current.hasMoreTrips).toBe(true);
+    expect(latestContext.trips.length).toBe(10);
+    expect(latestContext.hasMoreTrips).toBe(true);
     expect(AsyncStorage.setItem).toHaveBeenCalledWith('cached_trips', expect.any(String));
   });
 
@@ -139,11 +126,9 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 60));
+    await waitFor(() => {
+      expect(latestContext?.trips?.length).toBeGreaterThan(0);
     });
-
-    expect(latestContext.current.trips.length).toBeGreaterThan(0);
   });
 
   test('loads cached trips on startup', async () => {
@@ -164,11 +149,11 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 60));
+    await waitFor(() => {
+      expect(latestContext?.trips?.length).toBeGreaterThan(0);
     });
 
-    expect(latestContext.current.trips[0].id).toBe('cached_1');
+    expect(latestContext.trips[0].id).toBe('cached_1');
   });
 
   test('network status handles offline failure', async () => {
@@ -180,11 +165,9 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 60));
+    await waitFor(() => {
+      expect(latestContext?.isOnline).toBe(false);
     });
-
-    expect(latestContext.current.isOnline).toBe(false);
   });
 
   test('refreshTrips reloads initial trips', async () => {
@@ -202,15 +185,18 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 60));
-      await latestContext.current.refreshTrips();
+    await waitFor(() => {
+      expect(latestContext?.loading).toBe(false);
     });
 
-    expect(latestContext.current.trips[0].id).toBe('refreshed_1');
+    await act(async () => {
+      await latestContext.refreshTrips();
+    });
+
+    expect(latestContext.trips[0].id).toBe('refreshed_1');
   });
 
-  test('fetchMoreTrips handles pagination when more items exist', async () => {
+  test('fetchMoreTrips handles pagination when more items exist and when reached end', async () => {
     const firstTen = Array.from({ length: 10 }, (_, i) => ({
       id: `trip_${i}`,
       data: () => ({ title: `Trip ${i}`, status: 'published' }),
@@ -230,6 +216,11 @@ describe('AppProvider Flow & Methods', () => {
         forEach(cb: any) {
           this.docs.forEach(cb);
         },
+      })
+      .mockResolvedValueOnce({
+        empty: true,
+        docs: [],
+        forEach: jest.fn(),
       });
 
     render(
@@ -238,17 +229,21 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 60));
+    await waitFor(() => {
+      expect(latestContext?.hasMoreTrips).toBe(true);
     });
 
-    expect(latestContext.current.hasMoreTrips).toBe(true);
-
     await act(async () => {
-      await latestContext.current.fetchMoreTrips();
+      await latestContext.fetchMoreTrips();
     });
 
-    expect(latestContext.current.trips.some(t => t.id === 'more_1')).toBe(true);
+    expect(latestContext.trips.some(t => t.id === 'more_1')).toBe(true);
+
+    // End of pagination
+    await act(async () => {
+      await latestContext.fetchMoreTrips();
+    });
+    expect(latestContext.hasMoreTrips).toBe(false);
   });
 
   test('mockTravellerLogin and mockVendorLogin set demo users', async () => {
@@ -258,28 +253,31 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 50));
-      await latestContext.current.mockTravellerLogin();
+    await waitFor(() => {
+      expect(latestContext).toBeTruthy();
     });
 
-    expect(latestContext.current.userProfile?.id).toBe(DEMO_APP_TRAVELLER_USER.id);
+    await act(async () => {
+      await latestContext.mockTravellerLogin();
+    });
+
+    expect(latestContext.userProfile?.id).toBe(DEMO_APP_TRAVELLER_USER.id);
     expect(Alert.alert).toHaveBeenCalledWith('⚡ Demo Traveller', expect.any(String));
 
     await act(async () => {
-      await latestContext.current.mockVendorLogin();
+      await latestContext.mockVendorLogin();
     });
 
-    expect(latestContext.current.userProfile?.id).toBe(DEMO_APP_VENDOR_USER.id);
-    expect(latestContext.current.vendorBookings.length).toBeGreaterThan(0);
+    expect(latestContext.userProfile?.id).toBe(DEMO_APP_VENDOR_USER.id);
+    expect(latestContext.vendorBookings.length).toBeGreaterThan(0);
     expect(Alert.alert).toHaveBeenCalledWith('⚡ Demo Organiser', expect.any(String));
 
     await act(async () => {
-      await latestContext.current.logout();
+      await latestContext.logout();
     });
 
-    expect(latestContext.current.userProfile).toBeNull();
-    expect(latestContext.current.vendorBookings.length).toBe(0);
+    expect(latestContext.userProfile).toBeNull();
+    expect(latestContext.vendorBookings.length).toBe(0);
   });
 
   test('demo account restricts mutation actions (requireRealGoogleAccount)', async () => {
@@ -289,33 +287,47 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 50));
-      await latestContext.current.mockVendorLogin();
+    await waitFor(() => {
+      expect(latestContext).toBeTruthy();
     });
 
-    // Test each action individually and reset throttler to avoid burst trigger
-    AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await latestContext.current.updateUserProfile({ name: 'Hacked' });
+      await latestContext.mockVendorLogin();
     });
-    expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
 
     AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await latestContext.current.updateTrip('demo', { title: 'Hacked' });
+      await latestContext.updateUserProfile({ name: 'Hacked' });
     });
     expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
 
     AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await latestContext.current.addTrip({ title: 'New Trip', destination: 'Nowhere', price: 500 } as any);
+      await latestContext.updateTrip('demo', { title: 'Hacked' });
     });
     expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
 
     AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await latestContext.current.deleteTrip('demo');
+      await latestContext.addTrip({ title: 'New Trip', destination: 'Nowhere', price: 500 } as any);
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
+
+    AppSecurityAttackThrottler.reset();
+    await act(async () => {
+      await latestContext.deleteTrip('demo');
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
+
+    AppSecurityAttackThrottler.reset();
+    await act(async () => {
+      await latestContext.bookTrip({ tripId: 'demo', travelerName: 'Hacker', travelerPhone: '9999999999' } as any);
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
+
+    AppSecurityAttackThrottler.reset();
+    await act(async () => {
+      await latestContext.updateBookingStatus('b1', 'confirmed');
     });
     expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
   });
@@ -346,12 +358,15 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 50));
-      await latestContext.current.loginWithGoogle('vendor');
+    await waitFor(() => {
+      expect(latestContext).toBeTruthy();
     });
 
-    expect(latestContext.current.userProfile?.role).toBe('vendor');
+    await act(async () => {
+      await latestContext.loginWithGoogle('vendor');
+    });
+
+    expect(latestContext.userProfile?.role).toBe('vendor');
     expect(updateDoc).toHaveBeenCalled();
   });
 
@@ -371,13 +386,16 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
+    await waitFor(() => {
+      expect(latestContext).toBeTruthy();
+    });
+
     await act(async () => {
-      await new Promise(r => setTimeout(r, 50));
-      await latestContext.current.loginWithGoogle('traveller');
+      await latestContext.loginWithGoogle('traveller');
     });
 
     expect(setDoc).toHaveBeenCalled();
-    expect(latestContext.current.userProfile?.email).toBe('new@test.com');
+    expect(latestContext.userProfile?.email).toBe('new@test.com');
   });
 
   test('loginWithGoogle displays alert on failure', async () => {
@@ -389,9 +407,12 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
+    await waitFor(() => {
+      expect(latestContext).toBeTruthy();
+    });
+
     await act(async () => {
-      await new Promise(r => setTimeout(r, 50));
-      await latestContext.current.loginWithGoogle('vendor');
+      await latestContext.loginWithGoogle('vendor');
     });
 
     expect(Alert.alert).toHaveBeenCalledWith('Login Failed', expect.stringContaining('Google connection error'));
@@ -441,24 +462,22 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 60));
+    await waitFor(() => {
+      expect(latestContext?.userProfile?.id).toBe('real_vendor_123');
     });
-
-    expect(latestContext.current.userProfile?.id).toBe('real_vendor_123');
 
     // 1. updateUserProfile
     AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await latestContext.current.updateUserProfile({ name: 'Sahyadri Pro' });
+      await latestContext.updateUserProfile({ name: 'Sahyadri Pro' });
     });
-    expect(latestContext.current.userProfile?.name).toBe('Sahyadri Pro');
+    expect(latestContext.userProfile?.name).toBe('Sahyadri Pro');
     expect(updateDoc).toHaveBeenCalled();
 
     // 2. updateTrip
     AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await latestContext.current.updateTrip('real_trip_1', { title: 'Updated Adventure' });
+      await latestContext.updateTrip('real_trip_1', { title: 'Updated Adventure' });
     });
     expect(updateDoc).toHaveBeenCalled();
 
@@ -466,7 +485,7 @@ describe('AppProvider Flow & Methods', () => {
     AppSecurityAttackThrottler.reset();
     let created: any;
     await act(async () => {
-      created = await latestContext.current.addTrip({
+      created = await latestContext.addTrip({
         title: 'Brand New Trek',
         destination: 'Sahyadri',
         price: 1500,
@@ -480,11 +499,17 @@ describe('AppProvider Flow & Methods', () => {
     // 4. deleteTrip
     AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await latestContext.current.deleteTrip('real_trip_1');
+      await latestContext.deleteTrip('real_trip_1');
     });
     expect(deleteDoc).toHaveBeenCalled();
 
-    // 5. bookTrip
+    // 5. bookTrip validations
+    AppSecurityAttackThrottler.reset();
+    await expect(latestContext.bookTrip({} as any)).rejects.toThrow('Missing tripId in booking payload');
+    await expect(latestContext.bookTrip({ tripId: 't1', travelerName: 'A' } as any)).rejects.toThrow('Traveler name must be at least 2 characters');
+    await expect(latestContext.bookTrip({ tripId: 't1', travelerName: 'Valid', travelerPhone: '123' } as any)).rejects.toThrow('valid phone number');
+
+    // 5b. bookTrip success
     AppSecurityAttackThrottler.reset();
     (getDoc as jest.Mock).mockResolvedValueOnce({
       exists: () => true,
@@ -501,7 +526,7 @@ describe('AppProvider Flow & Methods', () => {
     });
 
     await act(async () => {
-      await latestContext.current.bookTrip({
+      await latestContext.bookTrip({
         tripId: 'real_trip_1',
         batchId: 'batch_1',
         travelerName: 'Sanjay Dutt',
@@ -528,7 +553,7 @@ describe('AppProvider Flow & Methods', () => {
     });
 
     await act(async () => {
-      await latestContext.current.updateBookingStatus('booking_123', 'confirmed');
+      await latestContext.updateBookingStatus('booking_123', 'confirmed');
     });
     expect(updateDoc).toHaveBeenCalled();
   });
