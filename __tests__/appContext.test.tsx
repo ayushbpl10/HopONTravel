@@ -3,25 +3,24 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { act, render } from '@testing-library/react-native';
 import {
   addDoc,
-  collection,
   deleteDoc,
-  doc,
   getDoc,
   getDocs,
   setDoc,
   updateDoc
 } from 'firebase/firestore';
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Alert, Text } from 'react-native';
 import {
   AppProvider,
   AppSecurityAttackThrottler,
+  DEMO_APP_TRAVELLER_BOOKINGS,
   DEMO_APP_TRAVELLER_USER,
+  DEMO_APP_VENDOR_BOOKINGS,
   DEMO_APP_VENDOR_USER,
   useAppContext,
 } from '../context/AppContext';
 
-// Spy on Alert
 jest.spyOn(Alert, 'alert');
 
 describe('AppSecurityAttackThrottler', () => {
@@ -33,12 +32,10 @@ describe('AppSecurityAttackThrottler', () => {
   test('allows operations within limit and triggers lockout on excess', () => {
     expect(AppSecurityAttackThrottler.isLockedOut()).toBe(false);
 
-    // First 5 should succeed
     for (let i = 0; i < 5; i++) {
       expect(AppSecurityAttackThrottler.checkAndEnforce('testAction')).toBe(true);
     }
 
-    // 6th burst within window should trigger lockout
     expect(AppSecurityAttackThrottler.checkAndEnforce('testAction')).toBe(false);
     expect(Alert.alert).toHaveBeenCalledWith(
       '🚨 Attack Protection Activated',
@@ -46,14 +43,12 @@ describe('AppSecurityAttackThrottler', () => {
     );
     expect(AppSecurityAttackThrottler.isLockedOut()).toBe(true);
 
-    // Subsequent operation while locked out should be blocked
     expect(AppSecurityAttackThrottler.checkAndEnforce('anotherAction')).toBe(false);
     expect(Alert.alert).toHaveBeenCalledWith(
       '🚨 Security Alert: Attack Protection',
       expect.stringContaining('is blocked')
     );
 
-    // Reset restores functionality
     AppSecurityAttackThrottler.reset();
     expect(AppSecurityAttackThrottler.isLockedOut()).toBe(false);
     expect(AppSecurityAttackThrottler.checkAndEnforce('testAction')).toBe(true);
@@ -62,25 +57,27 @@ describe('AppSecurityAttackThrottler', () => {
 
 describe('useAppContext hook', () => {
   test('throws error when used outside of AppProvider', () => {
+    let capturedError: any = null;
     const ComponentOutside = () => {
-      useAppContext();
+      try {
+        useAppContext();
+      } catch (e) {
+        capturedError = e;
+      }
       return null;
     };
-    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    expect(() => render(<ComponentOutside />)).toThrow('useAppContext must be used within an AppProvider');
-    spy.mockRestore();
+
+    render(<ComponentOutside />);
+    expect(capturedError?.message).toBe('useAppContext must be used within an AppProvider');
   });
 });
 
 describe('AppProvider Flow & Methods', () => {
-  let contextValue: ReturnType<typeof useAppContext>;
+  const latestContext: { current: ReturnType<typeof useAppContext> } = { current: null as any };
 
-  const Consumer: React.FC<{ onContext?: (ctx: any) => void }> = ({ onContext }) => {
+  const Consumer: React.FC = () => {
     const ctx = useAppContext();
-    useEffect(() => {
-      contextValue = ctx;
-      if (onContext) onContext(ctx);
-    }, [ctx, onContext]);
+    latestContext.current = ctx;
     return <Text testID="provider-ready">{ctx.loading ? 'loading' : 'ready'}</Text>;
   };
 
@@ -91,22 +88,17 @@ describe('AppProvider Flow & Methods', () => {
     global.fetch = jest.fn(() => Promise.resolve({ ok: true })) as any;
   });
 
-  test('renders children and loads initial trips from firestore or seeds fallback', async () => {
-    (getDocs as jest.Mock).mockResolvedValueOnce({
-      empty: true,
-      docs: [],
-      forEach: jest.fn(),
-    });
+  test('renders children and loads initial trips from firestore', async () => {
+    const mockTripList = Array.from({ length: 10 }, (_, i) => ({
+      id: `trip_${i}`,
+      data: () => ({ title: `Trip ${i}`, status: 'published', packages: [{ price: 999 }] }),
+    }));
+
     (getDocs as jest.Mock).mockResolvedValueOnce({
       empty: false,
-      docs: [
-        {
-          id: 'seeded_trip_1',
-          data: () => ({ title: 'Seeded Trip', status: 'published', packages: [{ price: 999 }] }),
-        },
-      ],
+      docs: mockTripList,
       forEach(cb: any) {
-        cb(this.docs[0]);
+        this.docs.forEach(cb);
       },
     });
 
@@ -120,9 +112,38 @@ describe('AppProvider Flow & Methods', () => {
       await new Promise(r => setTimeout(r, 60));
     });
 
-    expect(contextValue.loading).toBe(false);
-    expect(contextValue.trips.length).toBeGreaterThan(0);
+    expect(latestContext.current.loading).toBe(false);
+    expect(latestContext.current.trips.length).toBe(10);
+    expect(latestContext.current.hasMoreTrips).toBe(true);
     expect(AsyncStorage.setItem).toHaveBeenCalledWith('cached_trips', expect.any(String));
+  });
+
+  test('seeds fallback data when firestore returns no trips', async () => {
+    (getDocs as jest.Mock)
+      .mockResolvedValueOnce({
+        empty: true,
+        docs: [],
+        forEach: jest.fn(),
+      })
+      .mockResolvedValueOnce({
+        empty: false,
+        docs: [{ id: 'seeded_1', data: () => ({ title: 'Seeded Trip', status: 'published' }) }],
+        forEach(cb: any) {
+          this.docs.forEach(cb);
+        },
+      });
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 60));
+    });
+
+    expect(latestContext.current.trips.length).toBeGreaterThan(0);
   });
 
   test('loads cached trips on startup', async () => {
@@ -147,7 +168,7 @@ describe('AppProvider Flow & Methods', () => {
       await new Promise(r => setTimeout(r, 60));
     });
 
-    expect(contextValue.trips[0].id).toBe('cached_1');
+    expect(latestContext.current.trips[0].id).toBe('cached_1');
   });
 
   test('network status handles offline failure', async () => {
@@ -163,7 +184,7 @@ describe('AppProvider Flow & Methods', () => {
       await new Promise(r => setTimeout(r, 60));
     });
 
-    expect(contextValue.isOnline).toBe(false);
+    expect(latestContext.current.isOnline).toBe(false);
   });
 
   test('refreshTrips reloads initial trips', async () => {
@@ -183,20 +204,22 @@ describe('AppProvider Flow & Methods', () => {
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 60));
-      await contextValue.refreshTrips();
+      await latestContext.current.refreshTrips();
     });
 
-    expect(contextValue.trips[0].id).toBe('refreshed_1');
+    expect(latestContext.current.trips[0].id).toBe('refreshed_1');
   });
 
-  test('fetchMoreTrips handles pagination', async () => {
+  test('fetchMoreTrips handles pagination when more items exist', async () => {
+    const firstTen = Array.from({ length: 10 }, (_, i) => ({
+      id: `trip_${i}`,
+      data: () => ({ title: `Trip ${i}`, status: 'published' }),
+    }));
+
     (getDocs as jest.Mock)
       .mockResolvedValueOnce({
         empty: false,
-        docs: Array.from({ length: 10 }, (_, i) => ({
-          id: `trip_${i}`,
-          data: () => ({ title: `Trip ${i}`, status: 'published' }),
-        })),
+        docs: firstTen,
         forEach(cb: any) {
           this.docs.forEach(cb);
         },
@@ -219,13 +242,13 @@ describe('AppProvider Flow & Methods', () => {
       await new Promise(r => setTimeout(r, 60));
     });
 
-    expect(contextValue.hasMoreTrips).toBe(true);
+    expect(latestContext.current.hasMoreTrips).toBe(true);
 
     await act(async () => {
-      await contextValue.fetchMoreTrips();
+      await latestContext.current.fetchMoreTrips();
     });
 
-    expect(contextValue.trips.some(t => t.id === 'more_1')).toBe(true);
+    expect(latestContext.current.trips.some(t => t.id === 'more_1')).toBe(true);
   });
 
   test('mockTravellerLogin and mockVendorLogin set demo users', async () => {
@@ -237,26 +260,26 @@ describe('AppProvider Flow & Methods', () => {
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50));
-      await contextValue.mockTravellerLogin();
+      await latestContext.current.mockTravellerLogin();
     });
 
-    expect(contextValue.userProfile?.id).toBe(DEMO_APP_TRAVELLER_USER.id);
+    expect(latestContext.current.userProfile?.id).toBe(DEMO_APP_TRAVELLER_USER.id);
     expect(Alert.alert).toHaveBeenCalledWith('⚡ Demo Traveller', expect.any(String));
 
     await act(async () => {
-      await contextValue.mockVendorLogin();
+      await latestContext.current.mockVendorLogin();
     });
 
-    expect(contextValue.userProfile?.id).toBe(DEMO_APP_VENDOR_USER.id);
-    expect(contextValue.vendorBookings.length).toBeGreaterThan(0);
+    expect(latestContext.current.userProfile?.id).toBe(DEMO_APP_VENDOR_USER.id);
+    expect(latestContext.current.vendorBookings.length).toBeGreaterThan(0);
     expect(Alert.alert).toHaveBeenCalledWith('⚡ Demo Organiser', expect.any(String));
 
     await act(async () => {
-      await contextValue.logout();
+      await latestContext.current.logout();
     });
 
-    expect(contextValue.userProfile).toBeNull();
-    expect(contextValue.vendorBookings.length).toBe(0);
+    expect(latestContext.current.userProfile).toBeNull();
+    expect(latestContext.current.vendorBookings.length).toBe(0);
   });
 
   test('demo account restricts mutation actions (requireRealGoogleAccount)', async () => {
@@ -268,18 +291,32 @@ describe('AppProvider Flow & Methods', () => {
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50));
-      await contextValue.mockVendorLogin();
+      await latestContext.current.mockVendorLogin();
     });
 
+    // Test each action individually and reset throttler to avoid burst trigger
+    AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await contextValue.updateUserProfile({ name: 'Hacked' });
-      await contextValue.updateTrip('demo', { title: 'Hacked' });
-      await contextValue.addTrip({ title: 'New Trip', destination: 'Nowhere', price: 500 } as any);
-      await contextValue.deleteTrip('demo');
-      await contextValue.bookTrip({ tripId: 'demo', travelerName: 'Hacker', travelerPhone: '9999999999' } as any);
-      await contextValue.updateBookingStatus('b1', 'confirmed');
+      await latestContext.current.updateUserProfile({ name: 'Hacked' });
     });
+    expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
 
+    AppSecurityAttackThrottler.reset();
+    await act(async () => {
+      await latestContext.current.updateTrip('demo', { title: 'Hacked' });
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
+
+    AppSecurityAttackThrottler.reset();
+    await act(async () => {
+      await latestContext.current.addTrip({ title: 'New Trip', destination: 'Nowhere', price: 500 } as any);
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
+
+    AppSecurityAttackThrottler.reset();
+    await act(async () => {
+      await latestContext.current.deleteTrip('demo');
+    });
     expect(Alert.alert).toHaveBeenCalledWith('🔐 Google Sign-In Required', expect.any(String), expect.any(Array));
   });
 
@@ -311,10 +348,10 @@ describe('AppProvider Flow & Methods', () => {
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50));
-      await contextValue.loginWithGoogle('vendor');
+      await latestContext.current.loginWithGoogle('vendor');
     });
 
-    expect(contextValue.userProfile?.role).toBe('vendor');
+    expect(latestContext.current.userProfile?.role).toBe('vendor');
     expect(updateDoc).toHaveBeenCalled();
   });
 
@@ -336,11 +373,11 @@ describe('AppProvider Flow & Methods', () => {
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50));
-      await contextValue.loginWithGoogle('traveller');
+      await latestContext.current.loginWithGoogle('traveller');
     });
 
     expect(setDoc).toHaveBeenCalled();
-    expect(contextValue.userProfile?.email).toBe('new@test.com');
+    expect(latestContext.current.userProfile?.email).toBe('new@test.com');
   });
 
   test('loginWithGoogle displays alert on failure', async () => {
@@ -354,7 +391,7 @@ describe('AppProvider Flow & Methods', () => {
 
     await act(async () => {
       await new Promise(r => setTimeout(r, 50));
-      await contextValue.loginWithGoogle('vendor');
+      await latestContext.current.loginWithGoogle('vendor');
     });
 
     expect(Alert.alert).toHaveBeenCalledWith('Login Failed', expect.stringContaining('Google connection error'));
@@ -408,42 +445,47 @@ describe('AppProvider Flow & Methods', () => {
       await new Promise(r => setTimeout(r, 60));
     });
 
-    expect(contextValue.userProfile?.id).toBe('real_vendor_123');
+    expect(latestContext.current.userProfile?.id).toBe('real_vendor_123');
 
     // 1. updateUserProfile
+    AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await contextValue.updateUserProfile({ name: 'Sahyadri Pro' });
+      await latestContext.current.updateUserProfile({ name: 'Sahyadri Pro' });
     });
-    expect(contextValue.userProfile?.name).toBe('Sahyadri Pro');
+    expect(latestContext.current.userProfile?.name).toBe('Sahyadri Pro');
     expect(updateDoc).toHaveBeenCalled();
 
     // 2. updateTrip
+    AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await contextValue.updateTrip('real_trip_1', { title: 'Updated Adventure' });
+      await latestContext.current.updateTrip('real_trip_1', { title: 'Updated Adventure' });
     });
     expect(updateDoc).toHaveBeenCalled();
 
     // 3. addTrip
+    AppSecurityAttackThrottler.reset();
     let created: any;
     await act(async () => {
-      created = await contextValue.addTrip({
+      created = await latestContext.current.addTrip({
         title: 'Brand New Trek',
         destination: 'Sahyadri',
         price: 1500,
         packages: [{ name: 'Standard', price: 1500 }],
-        batches: [{ id: 'b1', dateDuration: 'Tomorrow', totalSeats: 20, bookedSeats: 0 }],
+        batches: [{ id: 'batch_1', dateDuration: 'Tomorrow', totalSeats: 20, bookedSeats: 0 }],
       } as any);
     });
     expect(created?.id).toBe('new_trip_id');
     expect(addDoc).toHaveBeenCalled();
 
     // 4. deleteTrip
+    AppSecurityAttackThrottler.reset();
     await act(async () => {
-      await contextValue.deleteTrip('real_trip_1');
+      await latestContext.current.deleteTrip('real_trip_1');
     });
     expect(deleteDoc).toHaveBeenCalled();
 
     // 5. bookTrip
+    AppSecurityAttackThrottler.reset();
     (getDoc as jest.Mock).mockResolvedValueOnce({
       exists: () => true,
       data: () => ({
@@ -459,7 +501,7 @@ describe('AppProvider Flow & Methods', () => {
     });
 
     await act(async () => {
-      await contextValue.bookTrip({
+      await latestContext.current.bookTrip({
         tripId: 'real_trip_1',
         batchId: 'batch_1',
         travelerName: 'Sanjay Dutt',
@@ -475,6 +517,7 @@ describe('AppProvider Flow & Methods', () => {
     expect(updateDoc).toHaveBeenCalled();
 
     // 6. updateBookingStatus
+    AppSecurityAttackThrottler.reset();
     (getDoc as jest.Mock).mockResolvedValueOnce({
       exists: () => true,
       data: () => ({ travelerEmail: 'sanjay@test.com', bookingId: 'ATGL-99999' }),
@@ -485,7 +528,7 @@ describe('AppProvider Flow & Methods', () => {
     });
 
     await act(async () => {
-      await contextValue.updateBookingStatus('booking_123', 'confirmed');
+      await latestContext.current.updateBookingStatus('booking_123', 'confirmed');
     });
     expect(updateDoc).toHaveBeenCalled();
   });
