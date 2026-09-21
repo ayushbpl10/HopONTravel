@@ -40,6 +40,7 @@ import { arrayUnion, doc, getDoc, updateDoc } from 'firebase/firestore';
 import {
     chargeExportFee,
     EXPORT_CHARGE,
+    getPlatformRazorpayKey,
     hasExportAccess,
     recordExportPayment,
 } from '../services/platformPaymentService';
@@ -309,5 +310,42 @@ describe('Platform vs Vendor Payment Separation', () => {
     expect(call.name).toBe('Ab Toh Ghoom Le');
     expect(call.description).toContain('Export');
     expect(call.description).toContain('Manali Trip');
+  });
+
+  it('fetches dynamic platform key from firestore when available', async () => {
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ platformRazorpayKey: 'rzp_live_custom99' }),
+    });
+    const result = await getPlatformRazorpayKey();
+    expect(result).toBe('rzp_live_custom99');
+  });
+
+  it('allows free export in DEV mode when platform key is invalid', async () => {
+    (global as any).__DEV__ = true;
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ platformRazorpayKey: 'invalid_key' }),
+    });
+    const result = await chargeExportFee('trip_1', 'Test Trip', 'vendor@a.com', '9876543210', 'Vendor');
+    expect(result.success).toBe(true);
+    expect(result.paymentId).toMatch(/^dev_/);
+    (global as any).__DEV__ = false;
+  });
+
+  it('returns error in production mode when platform key is invalid', async () => {
+    (global as any).__DEV__ = false;
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ platformRazorpayKey: 'invalid_key' }),
+    });
+    const result = await chargeExportFee('trip_1', 'Test Trip', 'vendor@a.com', '9876543210', 'Vendor');
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Platform payment not configured');
+  });
+
+  it('handles error when updating vendor paidExports fails', async () => {
+    (updateDoc as jest.Mock).mockRejectedValueOnce(new Error('Update failed'));
+    await expect(recordExportPayment('vendor_1', 'trip_1', 'pay_1')).resolves.not.toThrow();
   });
 });
