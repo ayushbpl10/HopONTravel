@@ -39,12 +39,15 @@ describe('Logger Utility', () => {
     expect(bundle).toContain('traveler@example.com (user_123)');
   });
 
-  it('handles anonymous / logged out user context in buildBundle', () => {
+  it('handles anonymous / logged out user context in buildBundle with and without entry data', () => {
     Logger.setUserContext(null, null);
-    Logger.info('Anonymous action');
+    Logger.info('Anonymous action with data', { key: 'value' });
+    Logger.info('Anonymous action without data');
     const bundle = Logger.buildBundle('Custom issue description');
     expect(bundle).toContain('User: Not logged in (anonymous)');
     expect(bundle).toContain('User Description:\nCustom issue description');
+    expect(bundle).toContain('Anonymous action with data');
+    expect(bundle).toContain('Anonymous action without data');
   });
 
   it('stores entries in buffer and retrieves with getBuffer', () => {
@@ -74,33 +77,42 @@ describe('Logger Utility', () => {
     expect(buffer[buffer.length - 1].message).toBe('Log message 204');
   });
 
-  it('logs info in development and production environments', () => {
+  it('logs info in development and production environments with and without data', () => {
     (Logger as any).isDevelopment = true;
     Logger.info('Dev info test', { a: 1 });
     expect(consoleLogSpy).toHaveBeenCalledWith('[INFO] Dev info test', { a: 1 });
+
+    Logger.info('Dev info test no data');
+    expect(consoleLogSpy).toHaveBeenCalledWith('[INFO] Dev info test no data', '');
 
     (Logger as any).isDevelopment = false;
     Logger.info('Prod info test');
     expect(Logger.getBuffer().some(e => e.message === 'Prod info test')).toBe(true);
   });
 
-  it('logs debug in development and production environments', () => {
+  it('logs debug in development and production environments with and without data', () => {
     (Logger as any).isDevelopment = true;
     Logger.debug('Dev debug message', { debugKey: 'v' });
     expect(consoleDebugSpy).toHaveBeenCalledWith('[DEBUG] Dev debug message', { debugKey: 'v' });
+
+    Logger.debug('Dev debug message no data');
+    expect(consoleDebugSpy).toHaveBeenCalledWith('[DEBUG] Dev debug message no data', '');
 
     (Logger as any).isDevelopment = false;
     Logger.debug('Prod debug message');
     expect(Logger.getBuffer().some(e => e.message === 'Prod debug message')).toBe(true);
   });
 
-  it('logs warn and persists to Firestore', async () => {
+  it('logs warn and persists to Firestore with and without data', async () => {
     (Logger as any).isDevelopment = true;
     Logger.setUserContext('vendor_456', 'vendor@example.com');
     Logger.warn('Warning triggered', { warnDetail: true });
 
     expect(consoleWarnSpy).toHaveBeenCalledWith('[WARN] Warning triggered', { warnDetail: true });
     expect(addDoc).toHaveBeenCalled();
+
+    Logger.warn('Warning triggered without data');
+    expect(consoleWarnSpy).toHaveBeenCalledWith('[WARN] Warning triggered without data', '');
 
     (Logger as any).isDevelopment = false;
     Logger.warn('Prod warning without data');

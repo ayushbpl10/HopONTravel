@@ -21,9 +21,11 @@ jest.mock('react-native', () => ({
 }));
 
 // Mock react-native-razorpay
+const mockRazorpayOpen = jest.fn(() => Promise.reject({ code: 'MODULE_NOT_FOUND' }));
 jest.mock('react-native-razorpay', () => ({
+  __esModule: true,
   default: {
-    open: jest.fn(() => Promise.reject({ code: 'MODULE_NOT_FOUND' })),
+    open: (...args: any[]) => mockRazorpayOpen(...args),
   },
 }));
 
@@ -227,6 +229,100 @@ describe('Razorpay Checkout Utility', () => {
           expect.stringContaining('Native payments require an EAS build'),
           expect.any(Array)
         );
+      });
+
+      it('should handle cancel button in Expo Go fallback alert', async () => {
+        (Platform as any).OS = 'android';
+        mockRazorpayOpen.mockRejectedValueOnce({ code: 'MODULE_NOT_FOUND' });
+        (Alert.alert as jest.Mock).mockImplementationOnce((title, message, buttons) => {
+          if (buttons && buttons[0]) {
+            buttons[0].onPress();
+          }
+        });
+        const result = await openRazorpayCheckout(validOptions);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Cancelled');
+      });
+
+      it('should return success with paymentId when native Razorpay succeeds', async () => {
+        (Platform as any).OS = 'ios';
+        mockRazorpayOpen.mockResolvedValueOnce({
+          razorpay_payment_id: 'pay_native_success_123',
+          razorpay_order_id: 'order_native_123',
+        });
+        const result = await openRazorpayCheckout(validOptions);
+        expect(result.success).toBe(true);
+        expect(result.paymentId).toBe('pay_native_success_123');
+        expect(result.orderId).toBe('order_native_123');
+      });
+
+      it('should return error description when native Razorpay fails with error description', async () => {
+        (Platform as any).OS = 'android';
+        mockRazorpayOpen.mockRejectedValueOnce({
+          description: 'Payment was cancelled by user on bank page',
+        });
+        const result = await openRazorpayCheckout(validOptions);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Payment was cancelled by user on bank page');
+      });
+
+      it('should return error message when native Razorpay fails with message only', async () => {
+        (Platform as any).OS = 'ios';
+        mockRazorpayOpen.mockRejectedValueOnce(new Error('Network disconnected during checkout'));
+        const result = await openRazorpayCheckout(validOptions);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Network disconnected during checkout');
+      });
+
+      it('should fallback to Payment failed when native error has no description or message', async () => {
+        (Platform as any).OS = 'ios';
+        mockRazorpayOpen.mockRejectedValueOnce({});
+        const result = await openRazorpayCheckout(validOptions);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Payment failed');
+      });
+
+      it('should handle native and web options without prefill, notes, or theme', async () => {
+        (Platform as any).OS = 'ios';
+        mockRazorpayOpen.mockResolvedValueOnce({
+          razorpay_payment_id: 'pay_minimal_123',
+        });
+        const minimalOptions: RazorpayCheckoutOptions = {
+          razorpayKey: 'rzp_test_minimal',
+          amount: 50,
+          name: 'Minimal Test',
+          description: 'No extras',
+        };
+        const result = await openRazorpayCheckout(minimalOptions);
+        expect(result.success).toBe(true);
+      });
+    });
+
+    describe('Web Platform Error Handling', () => {
+      beforeEach(() => {
+        (Platform as any).OS = 'web';
+      });
+
+      it('should handle exception thrown during web checkout initialization', async () => {
+        (global as any).window = {
+          Razorpay: jest.fn(() => {
+            throw new Error('Razorpay script instantiation error');
+          }),
+        };
+        const result = await openRazorpayCheckout(validOptions);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Razorpay script instantiation error');
+      });
+
+      it('should fallback to default error message if web initialization throws non-Error', async () => {
+        (global as any).window = {
+          Razorpay: jest.fn(() => {
+            throw 'Unknown error';
+          }),
+        };
+        const result = await openRazorpayCheckout(validOptions);
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Failed to initialize');
       });
     });
   });

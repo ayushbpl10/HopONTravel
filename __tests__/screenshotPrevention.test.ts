@@ -3,20 +3,25 @@
  * Tests for the screenshot/screen capture prevention utility
  */
 
+import React from 'react';
 import { Alert, Platform } from 'react-native';
+import { render, waitFor } from '@testing-library/react-native';
 
-// Mock expo-screen-capture BEFORE imports
+const mockSubscription = { remove: jest.fn() };
+let mockScreenshotListenerCallback: (() => void) | null = null;
 const mockPreventScreenCaptureAsync = jest.fn(() => Promise.resolve());
 const mockAllowScreenCaptureAsync = jest.fn(() => Promise.resolve());
-const mockAddScreenshotListener = jest.fn(() => ({ remove: jest.fn() }));
+const mockAddScreenshotListener = jest.fn((callback) => {
+  mockScreenshotListenerCallback = callback;
+  return mockSubscription;
+});
 
 jest.mock('expo-screen-capture', () => ({
-  preventScreenCaptureAsync: mockPreventScreenCaptureAsync,
-  allowScreenCaptureAsync: mockAllowScreenCaptureAsync,
-  addScreenshotListener: mockAddScreenshotListener,
+  preventScreenCaptureAsync: (...args: any[]) => mockPreventScreenCaptureAsync(...args),
+  allowScreenCaptureAsync: (...args: any[]) => mockAllowScreenCaptureAsync(...args),
+  addScreenshotListener: (cb: any) => mockAddScreenshotListener(cb),
 }));
 
-// Mock react-native
 jest.mock('react-native', () => ({
   Platform: {
     OS: 'ios',
@@ -29,100 +34,94 @@ jest.mock('react-native', () => ({
   },
 }));
 
-describe('Screenshot Prevention Utility', () => {
-  // We need to dynamically require the module after mocks are set up
-  let screenshotPrevention: typeof import('../utils/screenshotPrevention');
+import {
+  enableScreenshotPrevention,
+  disableScreenshotPrevention,
+  useScreenshotPrevention,
+  ScreenshotBlockerOverlay,
+} from '../utils/screenshotPrevention';
 
+describe('Screenshot Prevention Utility', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.resetModules();
     (Platform as any).OS = 'ios';
-    
-    // Re-require the module to get fresh instance with mocks
-    screenshotPrevention = require('../utils/screenshotPrevention');
+    mockScreenshotListenerCallback = null;
   });
 
   describe('enableScreenshotPrevention', () => {
     describe('Mobile (iOS/Android)', () => {
       it('should call preventScreenCaptureAsync on iOS', async () => {
         (Platform as any).OS = 'ios';
-        
-        // Re-require after changing Platform.OS
-        jest.resetModules();
-        screenshotPrevention = require('../utils/screenshotPrevention');
-
-        await screenshotPrevention.enableScreenshotPrevention();
-
+        await enableScreenshotPrevention();
         expect(mockPreventScreenCaptureAsync).toHaveBeenCalled();
       });
 
       it('should call preventScreenCaptureAsync on Android', async () => {
         (Platform as any).OS = 'android';
-        
-        jest.resetModules();
-        screenshotPrevention = require('../utils/screenshotPrevention');
-
-        await screenshotPrevention.enableScreenshotPrevention();
-
+        await enableScreenshotPrevention();
         expect(mockPreventScreenCaptureAsync).toHaveBeenCalled();
       });
 
       it('should handle errors gracefully when module throws', async () => {
         (Platform as any).OS = 'android';
         mockPreventScreenCaptureAsync.mockRejectedValueOnce(new Error('Not supported'));
-        
-        jest.resetModules();
-        screenshotPrevention = require('../utils/screenshotPrevention');
-
-        // Should not throw
-        await expect(screenshotPrevention.enableScreenshotPrevention()).resolves.not.toThrow();
+        await expect(enableScreenshotPrevention()).resolves.not.toThrow();
       });
     });
 
     describe('Web Platform', () => {
+      let registeredHandlers: Record<string, any> = {};
+
       beforeEach(() => {
-        jest.resetModules();
-        const RN = require('react-native');
-        RN.Platform.OS = 'web';
+        (Platform as any).OS = 'web';
+        registeredHandlers = {};
         (global as any).document = {
           body: {
             style: {} as CSSStyleDeclaration,
           },
-          addEventListener: jest.fn(),
-          removeEventListener: jest.fn(),
+          addEventListener: jest.fn((evt, handler) => {
+            registeredHandlers[evt] = handler;
+          }),
+          removeEventListener: jest.fn((evt) => {
+            delete registeredHandlers[evt];
+          }),
         };
-        
-        screenshotPrevention = require('../utils/screenshotPrevention');
       });
 
       afterEach(() => {
-        const RN = require('react-native');
-        RN.Platform.OS = 'ios';
+        (Platform as any).OS = 'ios';
         delete (global as any).document;
       });
 
-      it('should disable text selection on web', async () => {
-        await screenshotPrevention.enableScreenshotPrevention();
+      it('should disable text selection and attach security listeners', async () => {
+        await enableScreenshotPrevention();
 
         expect((global as any).document.body.style.userSelect).toBe('none');
-      });
+        expect((global as any).document.body.style.webkitUserSelect).toBe('none');
+        expect(registeredHandlers['contextmenu']).toBeDefined();
+        expect(registeredHandlers['keydown']).toBeDefined();
 
-      it('should add contextmenu event listener', async () => {
-        await screenshotPrevention.enableScreenshotPrevention();
+        // Test context menu prevention handler
+        const mockContextMenuEvent = { preventDefault: jest.fn() };
+        registeredHandlers['contextmenu'](mockContextMenuEvent);
+        expect(mockContextMenuEvent.preventDefault).toHaveBeenCalled();
+        expect(Alert.alert).toHaveBeenCalledWith('Action Blocked', expect.stringContaining('Right-click is disabled'));
 
-        expect((global as any).document.addEventListener).toHaveBeenCalledWith(
-          'contextmenu',
-          expect.any(Function)
-        );
-      });
+        // Test PrintScreen key prevention
+        const mockPrintScreenEvent = { key: 'PrintScreen', preventDefault: jest.fn() };
+        registeredHandlers['keydown'](mockPrintScreenEvent);
+        expect(mockPrintScreenEvent.preventDefault).toHaveBeenCalled();
+        expect(Alert.alert).toHaveBeenCalledWith('Action Blocked', expect.stringContaining('Screen capture and printing are not permitted'));
 
-      it('should add keydown event listener for print screen', async () => {
-        await screenshotPrevention.enableScreenshotPrevention();
+        // Test Ctrl+P prevention
+        const mockCtrlPEvent = { key: 'p', ctrlKey: true, preventDefault: jest.fn() };
+        registeredHandlers['keydown'](mockCtrlPEvent);
+        expect(mockCtrlPEvent.preventDefault).toHaveBeenCalled();
 
-        expect((global as any).document.addEventListener).toHaveBeenCalledWith(
-          'keydown',
-          expect.any(Function)
-        );
+        // Test standard non-blocked key press
+        const mockNormalKeyEvent = { key: 'a', ctrlKey: false, preventDefault: jest.fn() };
+        registeredHandlers['keydown'](mockNormalKeyEvent);
+        expect(mockNormalKeyEvent.preventDefault).not.toHaveBeenCalled();
       });
     });
   });
@@ -131,160 +130,87 @@ describe('Screenshot Prevention Utility', () => {
     describe('Mobile (iOS/Android)', () => {
       it('should call allowScreenCaptureAsync on mobile', async () => {
         (Platform as any).OS = 'android';
-        
-        jest.resetModules();
-        screenshotPrevention = require('../utils/screenshotPrevention');
-
-        await screenshotPrevention.disableScreenshotPrevention();
-
+        await disableScreenshotPrevention();
         expect(mockAllowScreenCaptureAsync).toHaveBeenCalled();
       });
 
       it('should handle errors gracefully', async () => {
         (Platform as any).OS = 'ios';
         mockAllowScreenCaptureAsync.mockRejectedValueOnce(new Error('Failed'));
-        
-        jest.resetModules();
-        screenshotPrevention = require('../utils/screenshotPrevention');
-
-        await expect(screenshotPrevention.disableScreenshotPrevention()).resolves.not.toThrow();
+        await expect(disableScreenshotPrevention()).resolves.not.toThrow();
       });
     });
 
     describe('Web Platform', () => {
       beforeEach(() => {
-        jest.resetModules();
-        const RN = require('react-native');
-        RN.Platform.OS = 'web';
+        (Platform as any).OS = 'web';
         (global as any).document = {
           body: {
-            style: { userSelect: 'none' } as CSSStyleDeclaration,
+            style: { userSelect: 'none', webkitUserSelect: 'none' } as CSSStyleDeclaration,
           },
           addEventListener: jest.fn(),
           removeEventListener: jest.fn(),
         };
-        
-        screenshotPrevention = require('../utils/screenshotPrevention');
       });
 
       afterEach(() => {
-        const RN = require('react-native');
-        RN.Platform.OS = 'ios';
+        (Platform as any).OS = 'ios';
         delete (global as any).document;
       });
 
-      it('should re-enable text selection on web', async () => {
-        await screenshotPrevention.disableScreenshotPrevention();
+      it('should re-enable text selection on web and remove listeners', async () => {
+        await disableScreenshotPrevention();
 
         expect((global as any).document.body.style.userSelect).toBe('auto');
-      });
-
-      it('should remove event listeners', async () => {
-        await screenshotPrevention.disableScreenshotPrevention();
-
-        expect((global as any).document.removeEventListener).toHaveBeenCalledWith(
-          'contextmenu',
-          expect.any(Function)
-        );
-        expect((global as any).document.removeEventListener).toHaveBeenCalledWith(
-          'keydown',
-          expect.any(Function)
-        );
+        expect((global as any).document.body.style.webkitUserSelect).toBe('auto');
+        expect((global as any).document.removeEventListener).toHaveBeenCalledWith('contextmenu', expect.any(Function));
+        expect((global as any).document.removeEventListener).toHaveBeenCalledWith('keydown', expect.any(Function));
       });
     });
   });
-});
 
-describe('Screenshot Detection Alerts', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
+  describe('useScreenshotPrevention Hook in Component', () => {
+    const TestComponent: React.FC<{ enabled: boolean }> = ({ enabled }) => {
+      useScreenshotPrevention(enabled);
+      return null;
+    };
 
-  it('should show alert when screenshot is detected', () => {
-    const screenshotCallback = () => {
-      Alert.alert(
-        'Screenshot Detected',
-        'Screenshots are not allowed in the Vendor Dashboard. Please pay the export fee to download data.',
+    it('enables prevention on mount and listens for screenshots on iOS', async () => {
+      const { rerender } = render(React.createElement(TestComponent, { enabled: true }));
+
+      await waitFor(() => {
+        expect(mockPreventScreenCaptureAsync).toHaveBeenCalled();
+        expect(mockAddScreenshotListener).toHaveBeenCalled();
+      });
+
+      // Trigger listener callback
+      expect(mockScreenshotListenerCallback).toBeDefined();
+      mockScreenshotListenerCallback!();
+      expect(Alert.alert).toHaveBeenCalledWith(
+        'Screen Capture Blocked',
+        expect.stringContaining('Screen capture is not permitted'),
         [{ text: 'OK' }]
       );
-    };
 
-    screenshotCallback();
+      // Re-rendering with enabled=false triggers effect cleanup
+      rerender(React.createElement(TestComponent, { enabled: false }));
+      await waitFor(() => {
+        expect(mockAllowScreenCaptureAsync).toHaveBeenCalled();
+        expect(mockSubscription.remove).toHaveBeenCalled();
+      });
+    });
 
-    expect(Alert.alert).toHaveBeenCalledWith(
-      'Screenshot Detected',
-      expect.stringContaining('Screenshots are not allowed'),
-      expect.any(Array)
-    );
-  });
-});
-
-describe('Web Context Menu Prevention', () => {
-  it('should prevent default on context menu event', () => {
-    const mockEvent = {
-      preventDefault: jest.fn(),
-    };
-
-    const preventContextMenu = (e: any) => {
-      e.preventDefault();
-    };
-
-    preventContextMenu(mockEvent);
-
-    expect(mockEvent.preventDefault).toHaveBeenCalled();
+    it('does nothing when disabled', () => {
+      render(React.createElement(TestComponent, { enabled: false }));
+      expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
+      expect(mockAddScreenshotListener).not.toHaveBeenCalled();
+    });
   });
 
-  it('should prevent print screen key', () => {
-    const mockEvent = {
-      key: 'PrintScreen',
-      ctrlKey: false,
-      preventDefault: jest.fn(),
-    };
-
-    const preventPrintScreen = (e: any) => {
-      if (e.key === 'PrintScreen' || (e.ctrlKey && e.key === 'p')) {
-        e.preventDefault();
-      }
-    };
-
-    preventPrintScreen(mockEvent);
-
-    expect(mockEvent.preventDefault).toHaveBeenCalled();
-  });
-
-  it('should prevent Ctrl+P', () => {
-    const mockEvent = {
-      key: 'p',
-      ctrlKey: true,
-      preventDefault: jest.fn(),
-    };
-
-    const preventPrintScreen = (e: any) => {
-      if (e.key === 'PrintScreen' || (e.ctrlKey && e.key === 'p')) {
-        e.preventDefault();
-      }
-    };
-
-    preventPrintScreen(mockEvent);
-
-    expect(mockEvent.preventDefault).toHaveBeenCalled();
-  });
-
-  it('should not prevent regular key presses', () => {
-    const mockEvent = {
-      key: 'a',
-      ctrlKey: false,
-      preventDefault: jest.fn(),
-    };
-
-    const preventPrintScreen = (e: any) => {
-      if (e.key === 'PrintScreen' || (e.ctrlKey && e.key === 'p')) {
-        e.preventDefault();
-      }
-    };
-
-    preventPrintScreen(mockEvent);
-
-    expect(mockEvent.preventDefault).not.toHaveBeenCalled();
+  describe('ScreenshotBlockerOverlay Component', () => {
+    it('renders null whether visible is true or false', () => {
+      expect(ScreenshotBlockerOverlay({ visible: false })).toBeNull();
+      expect(ScreenshotBlockerOverlay({ visible: true })).toBeNull();
+    });
   });
 });
