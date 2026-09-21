@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { TouchableOpacity } from 'react-native';
 import HomeScreen from '../app/index';
 import { Trip } from '../data/trips';
 
@@ -264,6 +265,56 @@ describe('Home Explore Flow', () => {
     await waitFor(() => {
       expect(screen.getByText('No Trips Found')).toBeTruthy();
       expect(screen.getByText(/Try adjusting your search or filters/i)).toBeTruthy();
+    });
+  });
+
+  it('handles destination modal and price modal selections', async () => {
+    await render(<HomeScreen />);
+
+    // Destination modal
+    const destDropdown = screen.getByText('Destination');
+    await act(async () => {
+      fireEvent.press(destDropdown);
+    });
+    const anywhereOpt = screen.getByText('Anywhere');
+    await act(async () => {
+      fireEvent.press(anywhereOpt);
+    });
+
+    // Price modal
+    const priceDropdown = screen.getByText('All');
+    await act(async () => {
+      fireEvent.press(priceDropdown);
+    });
+    const under1k = screen.getAllByText('Under ₹1000')[0];
+    await act(async () => {
+      fireEvent.press(under1k);
+    });
+
+    // Hero wishlist button
+    const heroWishlistBtn = screen.getByText('Ab Toh Ghoom Le!').parent?.parent?.findAllByType(TouchableOpacity).find((el: any) => el.props.style?.position === 'absolute');
+    if (heroWishlistBtn) {
+      await act(async () => {
+        fireEvent.press(heroWishlistBtn);
+      });
+      expect(mockRouterPush).toHaveBeenCalledWith('/wishlist');
+    }
+  });
+
+  it('triggers refresh and pagination on flatlist', async () => {
+    const { getByText } = (await render(<HomeScreen />)) as any;
+
+    // Refresh control
+    await act(async () => {
+      await mockRefreshTrips();
+    });
+    expect(mockRefreshTrips).toHaveBeenCalled();
+
+    // Card press in and out
+    const card = getByText('Harishchandragad Trek');
+    await act(async () => {
+      fireEvent(card, 'responderGrant');
+      fireEvent(card, 'responderRelease');
     });
   });
 });

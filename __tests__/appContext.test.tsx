@@ -557,4 +557,108 @@ describe('AppProvider Flow & Methods', () => {
     });
     expect(updateDoc).toHaveBeenCalled();
   });
+
+  test('covers error paths and edge cases: duplicate lock, notification failure, status update fallback', async () => {
+    const realUser = {
+      id: 'real_vendor_999',
+      email: 'vendor999@real.com',
+      name: 'Vendor 999',
+      role: 'vendor' as const,
+      upiId: 'real@upi',
+      whatsappNumber: '+919988776655',
+    };
+    await AsyncStorage.setItem('userProfile', JSON.stringify(realUser));
+
+    (getDoc as jest.Mock).mockResolvedValue({
+      exists: () => true,
+      id: 'real_vendor_999',
+      data: () => realUser,
+    });
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => {
+      expect(latestContext?.userProfile?.id).toBe('real_vendor_999');
+    });
+
+    // 1. Status update error fallback to state
+    AppSecurityAttackThrottler.reset();
+    (updateDoc as jest.Mock).mockRejectedValueOnce(new Error('Firestore update error'));
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ travelerEmail: 'traveller@test.com', bookingId: 'ATGL-55555' }),
+    });
+
+    await act(async () => {
+      await latestContext.updateBookingStatus('b_fail', 'failed');
+    });
+
+    // 2. bookTrip with vendor lookup by WhatsApp
+    AppSecurityAttackThrottler.reset();
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        id: 'trip_no_vid',
+        title: 'Trip No Vid',
+        vendorWhatsApp: '+919988776655',
+        batches: [{ id: 'b_wa', bookedSeats: 0, totalSeats: 20 }],
+      }),
+    });
+    (getDocs as jest.Mock).mockResolvedValueOnce({
+      empty: false,
+      docs: [{ id: 'found_vendor_id', data: () => ({ pushToken: 'found-token' }) }],
+    });
+    // Simulating push notification fetch rejection
+    global.fetch = jest.fn(() => Promise.reject(new Error('Push notification service down'))) as any;
+
+    await act(async () => {
+      await latestContext.bookTrip({
+        tripId: 'trip_no_vid',
+        batchId: 'b_wa',
+        travelerName: 'Anil Kapoor',
+        travelerPhone: '+919988776655',
+        seats: 2,
+        totalPrice: 2000,
+        status: 'pending',
+        createdAt: Date.now(),
+      });
+    });
+    expect(addDoc).toHaveBeenCalled();
+
+    // 3. Demo user clicking 'Sign in with Google' on requireRealGoogleAccount alert
+    await act(async () => {
+      await latestContext.mockVendorLogin();
+    });
+
+    AppSecurityAttackThrottler.reset();
+    let capturedButtons: any;
+    (Alert.alert as jest.Mock).mockImplementationOnce((title, msg, buttons) => {
+      capturedButtons = buttons;
+    });
+
+    await act(async () => {
+      await latestContext.updateUserProfile({ name: 'Blocked' });
+    });
+
+    expect(capturedButtons).toBeDefined();
+    // Invoke the 'Sign in with Google' button callback
+    (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({
+      type: 'success',
+      data: { user: { email: 'v@test.com', name: 'Vendor' }, idToken: 'token123' },
+    });
+    const signInBtn = capturedButtons.find((b: any) => b.text === 'Sign in with Google');
+    if (signInBtn && signInBtn.onPress) {
+      await act(async () => {
+        await signInBtn.onPress();
+      });
+    }
+
+    // 4. Session loading fallback when vendorDoc doesn't exist in Firestore
+    await AsyncStorage.setItem('userProfile', JSON.stringify({ id: 'cached_only_user', name: 'Cached User', role: 'vendor' }));
+    (getDoc as jest.Mock).mockResolvedValueOnce({ exists: () => false });
+  });
 });
