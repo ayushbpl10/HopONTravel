@@ -403,4 +403,46 @@ describe('Web Export Behavior', () => {
     expect(result).toBe(false);
     expect(Alert.alert).toHaveBeenCalledWith('Error', 'Please allow popups to print/save PDF');
   });
+
+  it('should alert when sharing is unavailable for PDF on mobile', async () => {
+    (Platform as any).OS = 'ios';
+    (Sharing.isAvailableAsync as jest.Mock).mockResolvedValueOnce(false);
+    const result = await exportToPDF(mockExportData);
+    expect(result).toBe(false);
+    expect(Alert.alert).toHaveBeenCalledWith('Error', 'Sharing is not available on this device');
+  });
 });
+
+describe('showExportDialog', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (Platform as any).OS = 'ios';
+  });
+
+  it('shows export dialog and handles Excel (CSV) selection', async () => {
+    const onComplete = jest.fn();
+    (Alert.alert as jest.Mock).mockImplementationOnce((title, msg, buttons) => {
+      if (buttons && buttons[0]) {
+        buttons[0].onPress();
+      }
+    });
+
+    showExportDialog(mockExportData, onComplete);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onComplete).toHaveBeenCalled();
+  });
+
+  it('shows export dialog and handles PDF selection', async () => {
+    const onComplete = jest.fn();
+    (Alert.alert as jest.Mock).mockImplementationOnce((title, msg, buttons) => {
+      if (buttons && buttons[1]) {
+        buttons[1].onPress();
+      }
+    });
+
+    showExportDialog(mockExportData, onComplete);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onComplete).toHaveBeenCalled();
+  });
+});
+

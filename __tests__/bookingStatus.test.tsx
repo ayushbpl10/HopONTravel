@@ -339,4 +339,49 @@ describe('Booking Status Flow', () => {
     });
     mockUserProfile = null;
   });
+
+  it('shows failed message and badge when booking payment failed', async () => {
+    (getDocs as jest.Mock).mockResolvedValueOnce({
+      empty: false,
+      docs: [
+        {
+          id: 'fail_123',
+          data: () => ({
+            id: 'fail_123',
+            travelerName: 'Failed User',
+            status: 'failed',
+            totalPrice: 1000,
+            packageName: 'Standard',
+          }),
+        },
+      ],
+    });
+
+    await render(<BookingStatusScreen />);
+    const input = screen.getByPlaceholderText('e.g. ATGL-XXXXX');
+    await act(async () => {
+      fireEvent.changeText(input, 'FAIL-123');
+    });
+    const trackBtn = screen.getByText('Track');
+    await act(async () => {
+      fireEvent.press(trackBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('FAILED')).toBeTruthy();
+      expect(screen.getByText(/Payment verification failed/)).toBeTruthy();
+    });
+  });
+
+  it('triggers Google login from SSO card when user is not logged in', async () => {
+    mockUserProfile = null;
+    await render(<BookingStatusScreen />);
+
+    const googleBtn = screen.getByText('Sign in with Google');
+    await act(async () => {
+      fireEvent.press(googleBtn);
+    });
+
+    expect(mockLoginWithGoogle).toHaveBeenCalledWith('traveller');
+  });
 });

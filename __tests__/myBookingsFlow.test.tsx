@@ -13,7 +13,10 @@ jest.mock('expo-router', () => ({
     replace: (...args: any[]) => mockRouterReplace(...args),
   },
   Stack: {
-    Screen: () => null,
+    Screen: ({ options }: any) => {
+      const HeaderRight = options?.headerRight;
+      return HeaderRight ? HeaderRight() : null;
+    },
   },
 }));
 

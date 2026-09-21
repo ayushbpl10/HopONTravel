@@ -52,6 +52,16 @@ const mockTrips: Trip[] = [
     destination: 'Goa',
     status: 'published',
   } as Trip,
+  {
+    id: 'trip_w3',
+    title: 'Mystic Forest Walk',
+    vendorName: 'Nature Trails',
+    vendorWhatsApp: '+919876543212',
+    packages: [],
+    images: [],
+    batches: [],
+    status: 'published',
+  } as Trip,
 ];
 
 // Mock AppContext
@@ -142,5 +152,13 @@ describe('Wishlist Flow', () => {
 
     expect(screen.getByText('No saved trips yet')).toBeTruthy();
     expect(screen.getByText('Tap the heart icon on any trip to save it for later.')).toBeTruthy();
+  });
+
+  it('handles trips without images and without packages using fallbacks', async () => {
+    mockWishlistIds = ['trip_w3'];
+    await render(<WishlistScreen />);
+
+    expect(screen.getByText('Mystic Forest Walk')).toBeTruthy();
+    expect(screen.getByText('Price TBD')).toBeTruthy();
   });
 });
