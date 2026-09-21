@@ -34,6 +34,16 @@ jest.mock('expo-router', () => ({
   },
 }));
 
+// Mock paymentService
+const mockInitiatePayment = jest.fn();
+jest.mock('../services/paymentService', () => {
+  const actual = jest.requireActual('../services/paymentService');
+  return {
+    ...actual,
+    initiatePayment: (...args: any[]) => mockInitiatePayment(...args),
+  };
+});
+
 // Mock AppContext
 const mockBookTrip = jest.fn().mockResolvedValue(undefined);
 jest.mock('../context/AppContext', () => ({
@@ -177,5 +187,220 @@ describe('Checkout Flow', () => {
         }),
       })
     );
+  });
+
+  it('shows alert when required fields are missing', async () => {
+    await render(<CheckoutScreen />);
+    const confirmBtn = screen.getByText('Confirm Booking');
+    await act(async () => {
+      fireEvent.press(confirmBtn);
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('Required Fields', 'Please fill out all fields.');
+  });
+
+  it('shows alert when travellers count is invalid', async () => {
+    await render(<CheckoutScreen />);
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('John Doe'), 'Aarav');
+      fireEvent.changeText(screen.getByPlaceholderText('10-digit mobile number'), '9876543210');
+      fireEvent.changeText(screen.getByPlaceholderText('john@example.com'), 'aarav@example.com');
+      fireEvent.changeText(screen.getByDisplayValue('1'), '0');
+    });
+    const confirmBtn = screen.getByText('Confirm Booking');
+    await act(async () => {
+      fireEvent.press(confirmBtn);
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('Invalid Travellers', 'Number of travellers must be at least 1.');
+  });
+
+  it('shows alert when consent switch is not accepted', async () => {
+    await render(<CheckoutScreen />);
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('John Doe'), 'Aarav');
+      fireEvent.changeText(screen.getByPlaceholderText('10-digit mobile number'), '9876543210');
+      fireEvent.changeText(screen.getByPlaceholderText('john@example.com'), 'aarav@example.com');
+    });
+    const confirmBtn = screen.getByText('Confirm Booking');
+    await act(async () => {
+      fireEvent.press(confirmBtn);
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('Consent Required', 'You must accept the risks involved.');
+  });
+
+  it('shows alert when terms are not accepted', async () => {
+    await render(<CheckoutScreen />);
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('John Doe'), 'Aarav');
+      fireEvent.changeText(screen.getByPlaceholderText('10-digit mobile number'), '9876543210');
+      fireEvent.changeText(screen.getByPlaceholderText('john@example.com'), 'aarav@example.com');
+    });
+    const switches = screen.getAllByRole('switch');
+    await act(async () => {
+      fireEvent(switches[0], 'valueChange', true); // Consent accepted, terms not accepted
+    });
+    const confirmBtn = screen.getByText('Confirm Booking');
+    await act(async () => {
+      fireEvent.press(confirmBtn);
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('Terms & Conditions Required', 'You must accept the Terms & Conditions to proceed.');
+  });
+
+  it('shows alert when captcha security question is answered incorrectly', async () => {
+    await render(<CheckoutScreen />);
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('John Doe'), 'Aarav');
+      fireEvent.changeText(screen.getByPlaceholderText('10-digit mobile number'), '9876543210');
+      fireEvent.changeText(screen.getByPlaceholderText('john@example.com'), 'aarav@example.com');
+      fireEvent.changeText(screen.getByPlaceholderText('?'), '999');
+    });
+    const switches = screen.getAllByRole('switch');
+    await act(async () => {
+      fireEvent(switches[0], 'valueChange', true);
+      fireEvent(switches[1], 'valueChange', true);
+    });
+    const confirmBtn = screen.getByText('Confirm Booking');
+    await act(async () => {
+      fireEvent.press(confirmBtn);
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('Security Check Failed', 'Please answer the math question correctly.');
+  });
+
+  it('shows alert when phone number is invalid', async () => {
+    await render(<CheckoutScreen />);
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('John Doe'), 'Aarav');
+      fireEvent.changeText(screen.getByPlaceholderText('10-digit mobile number'), '1234');
+      fireEvent.changeText(screen.getByPlaceholderText('john@example.com'), 'aarav@example.com');
+    });
+    const mathText = screen.getByText(/(\d+)\s*\+\s*(\d+)\s*=/);
+    const match = mathText.props.children.join('').match(/(\d+)\s*\+\s*(\d+)/);
+    const answer = (parseInt(match[1], 10) + parseInt(match[2], 10)).toString();
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('?'), answer);
+    });
+    const switches = screen.getAllByRole('switch');
+    await act(async () => {
+      fireEvent(switches[0], 'valueChange', true);
+      fireEvent(switches[1], 'valueChange', true);
+    });
+    const confirmBtn = screen.getByText('Confirm Booking');
+    await act(async () => {
+      fireEvent.press(confirmBtn);
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('Invalid Phone', 'Please enter a valid 10-digit phone number.');
+  });
+
+  it('shows alert when email address is invalid', async () => {
+    await render(<CheckoutScreen />);
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('John Doe'), 'Aarav');
+      fireEvent.changeText(screen.getByPlaceholderText('10-digit mobile number'), '9876543210');
+      fireEvent.changeText(screen.getByPlaceholderText('john@example.com'), 'invalid-email');
+    });
+    const mathText = screen.getByText(/(\d+)\s*\+\s*(\d+)\s*=/);
+    const match = mathText.props.children.join('').match(/(\d+)\s*\+\s*(\d+)/);
+    const answer = (parseInt(match[1], 10) + parseInt(match[2], 10)).toString();
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('?'), answer);
+    });
+    const switches = screen.getAllByRole('switch');
+    await act(async () => {
+      fireEvent(switches[0], 'valueChange', true);
+      fireEvent(switches[1], 'valueChange', true);
+    });
+    const confirmBtn = screen.getByText('Confirm Booking');
+    await act(async () => {
+      fireEvent.press(confirmBtn);
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('Invalid Email', 'Please enter a valid email address.');
+  });
+
+  it('handles terms and conditions modal view and agreement', async () => {
+    await render(<CheckoutScreen />);
+    const readTermsBtn = screen.getByText(/Read Terms & Conditions/);
+    await act(async () => {
+      fireEvent.press(readTermsBtn);
+    });
+    expect(screen.getByText('Custom Vendor T&C')).toBeTruthy();
+    const agreeBtn = screen.getByText('I Understand & Agree');
+    await act(async () => {
+      fireEvent.press(agreeBtn);
+    });
+  });
+
+  it('executes online payment successfully with Razorpay', async () => {
+    mockCheckoutParams.vendorPaymentEnabled = 'true';
+    mockCheckoutParams.vendorPaymentGateway = 'razorpay';
+    mockCheckoutParams.vendorRazorpayKey = 'rzp_test_123';
+    mockInitiatePayment.mockResolvedValueOnce({
+      success: true,
+      paymentId: 'pay_rzp_999',
+      gateway: 'razorpay',
+    });
+
+    await render(<CheckoutScreen />);
+
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('John Doe'), 'Pooja Sharma');
+      fireEvent.changeText(screen.getByPlaceholderText('10-digit mobile number'), '9876543210');
+      fireEvent.changeText(screen.getByPlaceholderText('john@example.com'), 'pooja@example.com');
+    });
+    const mathText = screen.getByText(/(\d+)\s*\+\s*(\d+)\s*=/);
+    const match = mathText.props.children.join('').match(/(\d+)\s*\+\s*(\d+)/);
+    const answer = (parseInt(match[1], 10) + parseInt(match[2], 10)).toString();
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('?'), answer);
+    });
+    const switches = screen.getAllByRole('switch');
+    await act(async () => {
+      fireEvent(switches[0], 'valueChange', true);
+      fireEvent(switches[1], 'valueChange', true);
+    });
+
+    const payBtn = screen.getByText('Pay ₹1500');
+    await act(async () => {
+      fireEvent.press(payBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockInitiatePayment).toHaveBeenCalled();
+      expect(mockBookTrip).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'confirmed',
+          paymentId: 'pay_rzp_999',
+          paymentGateway: 'razorpay',
+        })
+      );
+    });
+  });
+
+  it('handles booking exception and shows alert', async () => {
+    mockBookTrip.mockRejectedValueOnce(new Error('Network failure'));
+    await render(<CheckoutScreen />);
+
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('John Doe'), 'Aarav');
+      fireEvent.changeText(screen.getByPlaceholderText('10-digit mobile number'), '9876543210');
+      fireEvent.changeText(screen.getByPlaceholderText('john@example.com'), 'aarav@example.com');
+    });
+    const mathText = screen.getByText(/(\d+)\s*\+\s*(\d+)\s*=/);
+    const match = mathText.props.children.join('').match(/(\d+)\s*\+\s*(\d+)/);
+    const answer = (parseInt(match[1], 10) + parseInt(match[2], 10)).toString();
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('?'), answer);
+    });
+    const switches = screen.getAllByRole('switch');
+    await act(async () => {
+      fireEvent(switches[0], 'valueChange', true);
+      fireEvent(switches[1], 'valueChange', true);
+    });
+    const confirmBtn = screen.getByText('Confirm Booking');
+    await act(async () => {
+      fireEvent.press(confirmBtn);
+    });
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith('Error', 'Network failure');
+    });
   });
 });

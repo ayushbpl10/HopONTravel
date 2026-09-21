@@ -123,7 +123,7 @@ export default function CheckoutScreen() {
       }
       // If no online payment, booking stays pending for manual payment
 
-      // Save booking to context/Firebase
+      // Save booking to context/Firebase with security verification metadata
       await bookTrip({
         tripId: id as string,
         batchId: batchId as string,
@@ -138,6 +138,13 @@ export default function CheckoutScreen() {
         bookingId: orderId,
         paymentId,
         paymentGateway,
+        captchaVerified: true,
+        securityVerification: {
+          provider: 'math_captcha',
+          verified: true,
+          siteKey: '6Lexm8UtAAAAABvf5IuhmCniieHVVpsqiuADIAPM',
+          timestamp: Date.now(),
+        },
       } as any);
 
       router.replace({

@@ -1,5 +1,6 @@
 import { render } from '@testing-library/react-native';
 import { OfflineIndicator } from '../components/OfflineIndicator';
+import { Skeleton } from '../components/Skeleton';
 
 // Mock AppContext for OfflineIndicator
 const mockUseAppContext = jest.fn();
@@ -29,6 +30,25 @@ jest.mock('react-i18next', () => ({
     t: (key: string, defaultValue: string) => defaultValue || key,
   }),
 }));
+
+describe('Skeleton Component', () => {
+  it('renders default skeleton with default props', () => {
+    const { toJSON } = render(<Skeleton />);
+    expect(toJSON()).toBeTruthy();
+  });
+
+  it('renders custom dimensions and border radius', () => {
+    const { toJSON } = render(
+      <Skeleton width={150} height={50} borderRadius={12} style={{ marginVertical: 8 }} />
+    );
+    expect(toJSON()).toBeTruthy();
+  });
+
+  it('handles percentage width and circular dimensions', () => {
+    const { toJSON } = render(<Skeleton width="50%" height={60} borderRadius={30} />);
+    expect(toJSON()).toBeTruthy();
+  });
+});
 
 describe('OfflineIndicator Component', () => {
   beforeEach(() => {
