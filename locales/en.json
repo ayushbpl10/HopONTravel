@@ -95,5 +95,10 @@
     "confirmedNote": "Show this booking ID to your trip captain on departure day.",
     "share": "Share Trip",
     "home": "Back to Home"
+  },
+  "geo": {
+    "maharashtraDetected": "📍 Maharashtra detected • App is in Marathi",
+    "karnatakaDetected": "📍 Karnataka detected • App is in Kannada",
+    "switchToEnglish": "🌐 Switch to English"
   }
 }

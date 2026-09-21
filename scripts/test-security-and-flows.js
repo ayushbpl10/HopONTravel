@@ -434,6 +434,7 @@ function verifyClientSideDefenses() {
   assert(serveWebJs.includes("RECAPTCHA_SECRET_KEY = '6Lexm8UtAAAAAKGNqPktfUbw-QlMOKDrq2J0pn79'"), 'serve-web.js contains reCAPTCHA secret key');
   assert(serveWebJs.includes("urlPath === '/api/recaptcha-config'"), 'serve-web.js defines /api/recaptcha-config endpoint');
   assert(serveWebJs.includes("urlPath === '/api/verify-recaptcha'"), 'serve-web.js defines /api/verify-recaptcha endpoint');
+  assert(serveWebJs.includes("urlPath === '/api/geo-lang'"), 'serve-web.js defines /api/geo-lang endpoint');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -789,6 +790,65 @@ async function runLiveBrowserTests() {
       assert(langTest[l] && !langTest[l].hasIcons, `Live DOM for language '${l}' has no 🏔️🎒 icons`);
       assert(langTest[l] && langTest[l].hasDesc, `Live DOM for language '${l}' successfully rendered localized description`);
     });
+
+    // TEST FLOW 11: Geo-Location Language Detection & Translate to English Banner
+    console.log('  Flow 11: Testing Geo-Location Detection (Maharashtra -> mr, Karnataka -> kn) & Translate to English Banner...');
+
+    // 11a: Test API endpoint directly
+    const mhGeo = await pageClient.eval(`fetch('/api/geo-lang?region=MH').then(r => r.json())`);
+    assert(mhGeo && mhGeo.lang === 'mr' && mhGeo.highlightTranslate === true, '/api/geo-lang detects Maharashtra and returns mr with highlightTranslate=true');
+
+    const kaGeo = await pageClient.eval(`fetch('/api/geo-lang?region=KA').then(r => r.json())`);
+    assert(kaGeo && kaGeo.lang === 'kn' && kaGeo.highlightTranslate === true, '/api/geo-lang detects Karnataka and returns kn with highlightTranslate=true');
+
+    const dlGeo = await pageClient.eval(`fetch('/api/geo-lang?region=DL').then(r => r.json())`);
+    assert(dlGeo && dlGeo.lang === 'en' && dlGeo.highlightTranslate === false, '/api/geo-lang returns en for other Indian states');
+
+    // 11b: Test live Maharashtra visit
+    await pageClient.send('Page.navigate', { url: `${BASE_URL}/index.html?region=MH` });
+    await sleep(1500);
+
+    const mhDomResult = await pageClient.eval(`
+      const banner = document.getElementById('geoLangBanner');
+      const btn = document.getElementById('geoSwitchToEnBtn');
+      const langVal = document.getElementById('langSelect')?.value;
+      const bannerText = banner ? banner.textContent : '';
+      const hasBanner = !!banner && window.getComputedStyle(banner).display !== 'none';
+      const hasBtn = !!btn;
+      return { langVal, hasBanner, hasBtn, bannerText };
+    `);
+    assert(mhDomResult.langVal === 'mr', 'Maharashtra location automatically opens in Marathi (mr)');
+    assert(mhDomResult.hasBanner, 'Maharashtra visit renders prominent #geoLangBanner highlight banner');
+    assert(mhDomResult.hasBtn, '#geoLangBanner contains #geoSwitchToEnBtn button');
+
+    // 11c: Test clicking "Switch to English"
+    const switchResult = await pageClient.eval(`
+      const btn = document.getElementById('geoSwitchToEnBtn');
+      if (btn) btn.click();
+      const langVal = document.getElementById('langSelect')?.value;
+      const banner = document.getElementById('geoLangBanner');
+      const isBannerGone = !banner || window.getComputedStyle(banner).display === 'none' || banner.style.display === 'none';
+      const manualLang = localStorage.getItem('site_lang_manual');
+      return { langVal, isBannerGone, manualLang };
+    `);
+    assert(switchResult.langVal === 'en', 'Clicking "Switch to English" button transitions page to English');
+    assert(switchResult.manualLang === 'en', 'Clicking "Switch to English" records user manual choice');
+
+    // 11d: Test live Karnataka visit
+    await pageClient.eval(`
+      try { localStorage.clear(); sessionStorage.clear(); } catch (_) {}
+    `);
+    await pageClient.send('Page.navigate', { url: `${BASE_URL}/index.html?region=KA` });
+    await sleep(1500);
+
+    const kaDomResult = await pageClient.eval(`
+      const banner = document.getElementById('geoLangBanner');
+      const btn = document.getElementById('geoSwitchToEnBtn');
+      const langVal = document.getElementById('langSelect')?.value;
+      return { langVal, hasBanner: !!banner, hasBtn: !!btn };
+    `);
+    assert(kaDomResult.langVal === 'kn', 'Karnataka location automatically opens in Kannada (kn)');
+    assert(kaDomResult.hasBanner && kaDomResult.hasBtn, 'Karnataka visit renders highlight banner to switch to English');
 
     pageClient.close();
     browserClient.close();

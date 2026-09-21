@@ -8,7 +8,7 @@
     "close": "बंद करें"
   },
   "explore": {
-    "title": "हॉपऑन ट्रेवल",
+    "title": "अब तो घूम ले",
     "subtitle": "अपने अगले रोमांच की खोज करें",
     "searchPlaceholder": "गंतव्य खोजें...",
     "searchButton": "खोजें",
@@ -95,5 +95,10 @@
     "confirmedNote": "प्रस्थान के दिन अपने ट्रिप कैप्टन को यह आईडी दिखाएं।",
     "share": "साझा करें",
     "home": "होम पर वापस जाएं"
+  },
+  "geo": {
+    "maharashtraDetected": "📍 महाराष्ट्र स्थान मिला • ऐप मराठी में है",
+    "karnatakaDetected": "📍 कर्नाटक स्थान मिला • ऐप कन्नड़ में है",
+    "switchToEnglish": "🌐 Switch to English / अंग्रेज़ी में देखें"
   }
 }

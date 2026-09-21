@@ -8,7 +8,7 @@
     "close": "बंद करा"
   },
   "explore": {
-    "title": "हॉपऑन ट्रॅव्हल",
+    "title": "आता तर फिरून घे",
     "subtitle": "तुमचा पुढचा साहस शोधा",
     "searchPlaceholder": "ठिकाणानुसार शोधा...",
     "searchButton": "शोधा",
@@ -95,5 +95,10 @@
     "confirmedNote": "प्रवासाच्या दिवशी तुमच्या ट्रिप कॅप्टनला हा आयडी दाखवा.",
     "share": "शेअर करा",
     "home": "होमवर परत जा"
+  },
+  "geo": {
+    "maharashtraDetected": "📍 महाराष्ट्र स्थान आढळले • ॲप मराठीत आहे",
+    "karnatakaDetected": "📍 कर्नाटक स्थान आढळले • ॲप कन्नडमध्ये आहे",
+    "switchToEnglish": "🌐 Switch to English / इंग्रजीत पहा"
   }
 }

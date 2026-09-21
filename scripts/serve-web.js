@@ -74,6 +74,53 @@ const server = http.createServer((req, res) => {
   const urlPath = req.url.split('?')[0];
 
   // 3. API Endpoints
+  if (urlPath === '/api/geo-lang' && req.method === 'GET') {
+    const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const queryRegion = (parsedUrl.searchParams.get('region') || parsedUrl.searchParams.get('state') || '').trim().toUpperCase();
+    const queryIp = (parsedUrl.searchParams.get('ip') || '').trim();
+    const headerRegion = (req.headers['x-region'] || req.headers['cf-region'] || req.headers['x-vercel-ip-country-region'] || '').toUpperCase();
+
+    let detectedRegion = queryRegion || headerRegion || '';
+    let detectedCountry = (req.headers['cf-ipcountry'] || req.headers['x-country-code'] || 'IN').toUpperCase();
+
+    // Default detection logic:
+    // Maharashtra -> 'mr' (Marathi)
+    // Karnataka -> 'kn' (Kannada)
+    // Rest of India & World -> 'en' (English)
+    let lang = 'en';
+    let isRegional = false;
+    let stateName = 'Other';
+
+    if (detectedRegion === 'MH' || detectedRegion === 'MAHARASHTRA' || detectedRegion.includes('MAHA')) {
+      lang = 'mr';
+      isRegional = true;
+      stateName = 'Maharashtra';
+      detectedRegion = 'MH';
+    } else if (detectedRegion === 'KA' || detectedRegion === 'KARNATAKA' || detectedRegion.includes('KARN')) {
+      lang = 'kn';
+      isRegional = true;
+      stateName = 'Karnataka';
+      detectedRegion = 'KA';
+    } else if (detectedRegion === 'DL' || detectedRegion === 'DELHI' || detectedRegion === 'MP' || detectedRegion === 'UP' || detectedRegion === 'GJ') {
+      lang = 'en'; // Per requirement: show in English for rest of Indian states
+      stateName = detectedRegion;
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    });
+    return res.end(JSON.stringify({
+      success: true,
+      country: detectedCountry,
+      region: detectedRegion || 'DEFAULT',
+      regionName: stateName,
+      lang: lang,
+      isRegional: isRegional,
+      highlightTranslate: isRegional
+    }));
+  }
+
   if (urlPath === '/api/recaptcha-config' && req.method === 'GET') {
     res.writeHead(200, {
       'Content-Type': 'application/json',
