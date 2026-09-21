@@ -147,12 +147,10 @@ export default function BookingConfirmationScreen() {
           <View style={styles.paymentSection}>
             <Text style={styles.paymentHeader}>Complete Your Payment</Text>
             <View style={styles.buttonRow}>
-              {vendorUPI ? (
-                <TouchableOpacity style={[styles.bookButton, styles.upiButton]} onPress={handleUPIPayment}>
-                  <FontAwesome name="rupee" size={20} color="white" style={styles.buttonIcon} />
-                  <Text style={styles.bookButtonText}>Pay via UPI</Text>
-                </TouchableOpacity>
-              ) : null}
+              <TouchableOpacity style={[styles.bookButton, styles.upiButton]} onPress={handleUPIPayment}>
+                <FontAwesome name="rupee" size={20} color="white" style={styles.buttonIcon} />
+                <Text style={styles.bookButtonText}>Pay via UPI</Text>
+              </TouchableOpacity>
 
               <TouchableOpacity style={[styles.bookButton, styles.waButton]} onPress={handleWhatsAppBooking}>
                 <FontAwesome name="whatsapp" size={24} color="white" style={styles.buttonIcon} />

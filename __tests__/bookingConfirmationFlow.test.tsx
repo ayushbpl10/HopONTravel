@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { Linking, Share } from 'react-native';
+import { Alert, Linking, Share } from 'react-native';
 import BookingConfirmationScreen from '../app/booking-confirmation';
 
 // Mock router
@@ -49,6 +49,7 @@ jest.mock('react-i18next', () => ({
 describe('Booking Confirmation Flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     jest.spyOn(Linking, 'openURL').mockImplementation(() => Promise.resolve());
     jest.spyOn(Linking, 'canOpenURL').mockImplementation(() => Promise.resolve(true));
     jest.spyOn(Share, 'share').mockImplementation(() => Promise.resolve({ action: Share.sharedAction }));
@@ -153,5 +154,64 @@ describe('Booking Confirmation Flow', () => {
     });
 
     expect(mockRouterReplace).toHaveBeenCalledWith('/');
+  });
+
+  it('falls back to wa.me when whatsapp:// cannot be opened', async () => {
+    mockParams.paymentStatus = 'pending';
+    jest.spyOn(Linking, 'canOpenURL').mockResolvedValueOnce(false);
+    await render(<BookingConfirmationScreen />);
+
+    const waBtn = screen.getByText('WhatsApp');
+    await act(async () => {
+      fireEvent.press(waBtn);
+    });
+
+    await waitFor(() => {
+      expect(Linking.openURL).toHaveBeenCalledWith(expect.stringContaining('https://wa.me/'));
+    });
+  });
+
+  it('shows alert when WhatsApp opening fails', async () => {
+    mockParams.paymentStatus = 'pending';
+    jest.spyOn(Linking, 'canOpenURL').mockRejectedValueOnce(new Error('Linking failed'));
+    await render(<BookingConfirmationScreen />);
+
+    const waBtn = screen.getByText('WhatsApp');
+    await act(async () => {
+      fireEvent.press(waBtn);
+    });
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith('Error', 'Could not open WhatsApp.');
+    });
+  });
+
+  it('shows notice when vendor UPI details are missing', async () => {
+    mockParams.paymentStatus = 'pending';
+    mockParams.vendorUPI = '';
+    await render(<BookingConfirmationScreen />);
+
+    const upiBtn = screen.getByText('Pay via UPI');
+    await act(async () => {
+      fireEvent.press(upiBtn);
+    });
+
+    expect(Alert.alert).toHaveBeenCalledWith('Notice', 'UPI details not provided by the vendor. Please contact via WhatsApp.');
+  });
+
+  it('shows alert when UPI app is not installed or fails to open', async () => {
+    mockParams.paymentStatus = 'pending';
+    mockParams.vendorUPI = 'sahyadri@upi';
+    jest.spyOn(Linking, 'openURL').mockRejectedValueOnce(new Error('No UPI app'));
+    await render(<BookingConfirmationScreen />);
+
+    const upiBtn = screen.getByText('Pay via UPI');
+    await act(async () => {
+      fireEvent.press(upiBtn);
+    });
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith('UPI App Not Found', 'Could not open UPI App. Please ensure you have a UPI app installed.');
+    });
   });
 });
