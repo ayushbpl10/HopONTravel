@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { Alert, Platform } from 'react-native';
-import { render, waitFor } from '@testing-library/react-native';
+import { act, render, waitFor } from '@testing-library/react-native';
 
 const mockSubscription = { remove: jest.fn() };
 let mockScreenshotListenerCallback: (() => void) | null = null;
@@ -170,13 +170,17 @@ describe('Screenshot Prevention Utility', () => {
   });
 
   describe('useScreenshotPrevention Hook in Component', () => {
-    const TestComponent: React.FC<{ enabled: boolean }> = ({ enabled }) => {
+    let toggleEnabled: (val: boolean) => void;
+
+    const TestComponent: React.FC<{ initialEnabled?: boolean }> = ({ initialEnabled = true }) => {
+      const [enabled, setEnabled] = React.useState(initialEnabled);
+      toggleEnabled = setEnabled;
       useScreenshotPrevention(enabled);
       return null;
     };
 
     it('enables prevention on mount and listens for screenshots on iOS', async () => {
-      const { rerender } = render(React.createElement(TestComponent, { enabled: true }));
+      render(React.createElement(TestComponent, { initialEnabled: true }));
 
       await waitFor(() => {
         expect(mockPreventScreenCaptureAsync).toHaveBeenCalled();
@@ -192,8 +196,11 @@ describe('Screenshot Prevention Utility', () => {
         [{ text: 'OK' }]
       );
 
-      // Re-rendering with enabled=false triggers effect cleanup
-      rerender(React.createElement(TestComponent, { enabled: false }));
+      // Trigger disable to test effect cleanup
+      await act(async () => {
+        toggleEnabled(false);
+      });
+
       await waitFor(() => {
         expect(mockAllowScreenCaptureAsync).toHaveBeenCalled();
         expect(mockSubscription.remove).toHaveBeenCalled();
@@ -201,7 +208,7 @@ describe('Screenshot Prevention Utility', () => {
     });
 
     it('does nothing when disabled', () => {
-      render(React.createElement(TestComponent, { enabled: false }));
+      render(React.createElement(TestComponent, { initialEnabled: false }));
       expect(mockPreventScreenCaptureAsync).not.toHaveBeenCalled();
       expect(mockAddScreenshotListener).not.toHaveBeenCalled();
     });
@@ -211,6 +218,21 @@ describe('Screenshot Prevention Utility', () => {
     it('renders null whether visible is true or false', () => {
       expect(ScreenshotBlockerOverlay({ visible: false })).toBeNull();
       expect(ScreenshotBlockerOverlay({ visible: true })).toBeNull();
+    });
+  });
+
+  describe('Missing Module Fallback', () => {
+    it('handles require failure gracefully when expo-screen-capture is unavailable', () => {
+      jest.isolateModules(() => {
+        jest.resetModules();
+        jest.doMock('expo-screen-capture', () => {
+          throw new Error('Cannot find module');
+        });
+        const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+        require('../utils/screenshotPrevention');
+        expect(consoleSpy).toHaveBeenCalledWith('expo-screen-capture not available');
+        consoleSpy.mockRestore();
+      });
     });
   });
 });
