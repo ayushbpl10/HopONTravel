@@ -313,10 +313,10 @@ export default function CheckoutScreen() {
       <TouchableOpacity 
         style={[
           styles.btn, 
-          (!consent || !termsAccepted || !name || !phone || !email || !captchaAnswer || isProcessing) ? styles.btnDisabled : null
+          isProcessing ? styles.btnDisabled : null
         ]} 
         onPress={handleProceed}
-        disabled={!consent || !termsAccepted || !name || !phone || !email || !captchaAnswer || isProcessing}
+        disabled={isProcessing}
       >
         {isProcessing ? (
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>

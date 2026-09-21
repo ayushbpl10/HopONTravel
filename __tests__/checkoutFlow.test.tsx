@@ -315,17 +315,58 @@ describe('Checkout Flow', () => {
     expect(Alert.alert).toHaveBeenCalledWith('Invalid Email', 'Please enter a valid email address.');
   });
 
-  it('handles terms and conditions modal view and agreement', async () => {
+  it('handles terms and conditions modal view, close, and agreement', async () => {
     await render(<CheckoutScreen />);
-    const readTermsBtn = screen.getByText(/Read Terms & Conditions/);
+    // 1. Click inline link to open modal
+    const inlineTerms = screen.getByText('Terms & Conditions & Disclaimer');
+    await act(async () => {
+      fireEvent.press(inlineTerms);
+    });
+    expect(screen.getByText('Custom Vendor T&C')).toBeTruthy();
+
+    // 2. Click close button
+    const closeBtn = screen.getByText(''); // FontAwesome times-circle
+    await act(async () => {
+      fireEvent.press(closeBtn);
+    });
+
+    // 3. Re-open via View Full Terms & Conditions button and accept
+    const readTermsBtn = screen.getByText(/View Full Terms & Conditions/);
     await act(async () => {
       fireEvent.press(readTermsBtn);
     });
-    expect(screen.getByText('Custom Vendor T&C')).toBeTruthy();
-    const agreeBtn = screen.getByText('I Understand & Agree');
+    const acceptBtn = screen.getByText('I Accept Terms & Conditions');
     await act(async () => {
-      fireEvent.press(agreeBtn);
+      fireEvent.press(acceptBtn);
     });
+  });
+
+  it('shows alert when amount is zero or negative', async () => {
+    mockCheckoutParams.totalPrice = '0';
+    await render(<CheckoutScreen />);
+
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('John Doe'), 'Aarav');
+      fireEvent.changeText(screen.getByPlaceholderText('10-digit mobile number'), '9876543210');
+      fireEvent.changeText(screen.getByPlaceholderText('john@example.com'), 'aarav@example.com');
+    });
+    const mathText = screen.getByText(/(\d+)\s*\+\s*(\d+)\s*=/);
+    const match = mathText.props.children.join('').match(/(\d+)\s*\+\s*(\d+)/);
+    const answer = (parseInt(match[1], 10) + parseInt(match[2], 10)).toString();
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('?'), answer);
+    });
+    const switches = screen.getAllByRole('switch');
+    await act(async () => {
+      fireEvent(switches[0], 'valueChange', true);
+      fireEvent(switches[1], 'valueChange', true);
+    });
+    const confirmBtn = screen.getByText('Confirm Booking');
+    await act(async () => {
+      fireEvent.press(confirmBtn);
+    });
+
+    expect(Alert.alert).toHaveBeenCalledWith('Error', 'Invalid booking amount. Please go back and try again.');
   });
 
   it('executes online payment successfully with Razorpay', async () => {

@@ -32,20 +32,20 @@ jest.mock('react-i18next', () => ({
 }));
 
 describe('Skeleton Component', () => {
-  it('renders default skeleton with default props', () => {
-    const { toJSON } = render(<Skeleton />);
+  it('renders default skeleton with default props', async () => {
+    const { toJSON } = (await render(<Skeleton />)) as any;
     expect(toJSON()).toBeTruthy();
   });
 
-  it('renders custom dimensions and border radius', () => {
-    const { toJSON } = render(
+  it('renders custom dimensions and border radius', async () => {
+    const { toJSON } = (await render(
       <Skeleton width={150} height={50} borderRadius={12} style={{ marginVertical: 8 }} />
-    );
+    )) as any;
     expect(toJSON()).toBeTruthy();
   });
 
-  it('handles percentage width and circular dimensions', () => {
-    const { toJSON } = render(<Skeleton width="50%" height={60} borderRadius={30} />);
+  it('handles percentage width and circular dimensions', async () => {
+    const { toJSON } = (await render(<Skeleton width="50%" height={60} borderRadius={30} />)) as any;
     expect(toJSON()).toBeTruthy();
   });
 });
