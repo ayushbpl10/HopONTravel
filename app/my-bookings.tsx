@@ -130,9 +130,9 @@ export default function MyBookingsScreen() {
         </View>
 
         <FlatList
-          data={bookings}
+          data={bookings || []}
           keyExtractor={item => item.id}
-          contentContainerStyle={bookings.length === 0 ? styles.emptyContainer : styles.listContainer}
+          contentContainerStyle={(bookings || []).length === 0 ? styles.emptyContainer : styles.listContainer}
           renderItem={({ item }) => (
             <TouchableOpacity 
               style={styles.card}

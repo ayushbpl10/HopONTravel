@@ -46,12 +46,25 @@ let mockUserProfile: any = {
   role: 'traveller',
 };
 const mockLogout = jest.fn();
+const mockDemoBookings = [
+  {
+    id: 'demo_booking_1',
+    bookingId: 'ATGL-DEMO-99',
+    travelerName: 'Pooja Sharma',
+    packageName: 'Weekend Pass',
+    seats: 1,
+    totalPrice: 2000,
+    status: 'confirmed',
+    createdAt: 1000,
+  }
+];
 
 jest.mock('../context/AppContext', () => ({
   useAppContext: () => ({
     userProfile: mockUserProfile,
     logout: mockLogout,
   }),
+  DEMO_APP_TRAVELLER_BOOKINGS: mockDemoBookings,
 }));
 
 // Mock ThemeContext
@@ -206,6 +219,8 @@ describe('My Bookings Flow', () => {
 
   it('loads cached bookings from AsyncStorage when available', async () => {
     const AsyncStorage = require('@react-native-async-storage/async-storage');
+    const { getDocs } = require('firebase/firestore');
+    getDocs.mockRejectedValueOnce(new Error('Network offline'));
     AsyncStorage.getItem.mockResolvedValueOnce(JSON.stringify([
       {
         id: 'cached_1',
