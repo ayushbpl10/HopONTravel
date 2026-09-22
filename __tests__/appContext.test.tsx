@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import React from 'react';
 import { Alert, Platform, Text } from 'react-native';
-import { act, render, waitFor } from '@testing-library/react-native';
+import { act, cleanup, render, waitFor } from '@testing-library/react-native';
 import { auth } from '../config/firebase';
 import {
   AppProvider,
@@ -60,16 +60,17 @@ describe('AppSecurityAttackThrottler', () => {
 
 describe('useAppContext hook', () => {
   test('throws error when used outside of AppProvider', () => {
+    let capturedErr: any = null;
     const ComponentOutside = () => {
       try {
         useAppContext();
       } catch (err: any) {
-        return <Text testID="caught-error">{err.message}</Text>;
+        capturedErr = err;
       }
       return null;
     };
-    const { getByTestId } = render(<ComponentOutside />);
-    expect(getByTestId('caught-error').props.children).toBe('useAppContext must be used within an AppProvider');
+    render(<ComponentOutside />);
+    expect(capturedErr?.message).toBe('useAppContext must be used within an AppProvider');
   });
 });
 
@@ -83,6 +84,7 @@ describe('AppProvider Flow & Methods', () => {
   };
 
   beforeEach(async () => {
+    cleanup();
     jest.clearAllMocks();
     AppSecurityAttackThrottler.reset();
     await AsyncStorage.clear();
@@ -712,6 +714,10 @@ describe('AppProvider Flow & Methods', () => {
       await act(async () => {
         await latestContext.loginWithGoogle('vendor');
       });
+
+      console.log('DEBUG PLATFORM.OS:', Platform.OS);
+      console.log('DEBUG ALERT CALLS:', (Alert.alert as jest.Mock).mock.calls);
+      console.log('DEBUG NOTIFICATIONS CALLS:', (Notifications.setNotificationChannelAsync as jest.Mock).mock.calls);
 
       expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith('default', expect.any(Object));
 

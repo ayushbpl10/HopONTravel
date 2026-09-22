@@ -40,7 +40,10 @@ jest.mock('expo-notifications', () => ({
   setNotificationHandler: jest.fn((config) => {
     global.__lastNotificationHandler = config;
   }),
-  setNotificationChannelAsync: jest.fn(),
+  setNotificationChannelAsync: jest.fn(() => Promise.resolve()),
+  AndroidImportance: {
+    MAX: 5,
+  },
   getPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
   requestPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
   getExpoPushTokenAsync: jest.fn(() => Promise.resolve({ data: 'mock-push-token' })),
