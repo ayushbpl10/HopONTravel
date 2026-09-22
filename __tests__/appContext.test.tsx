@@ -715,10 +715,6 @@ describe('AppProvider Flow & Methods', () => {
         await latestContext.loginWithGoogle('vendor');
       });
 
-      console.log('DEBUG PLATFORM.OS:', Platform.OS);
-      console.log('DEBUG ALERT CALLS:', (Alert.alert as jest.Mock).mock.calls);
-      console.log('DEBUG NOTIFICATIONS CALLS:', (Notifications.setNotificationChannelAsync as jest.Mock).mock.calls);
-
       expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith('default', expect.any(Object));
 
       // Test denied permission path
@@ -751,6 +747,8 @@ describe('AppProvider Flow & Methods', () => {
     await waitFor(() => expect(latestContext?.loading).toBe(false));
     expect(consoleSpy).toHaveBeenCalledWith('Error loading trips:', expect.any(Error));
 
+    cleanup();
+
     // 2. seedInitialData error catch when initial query returns 0 trips
     (getDocs as jest.Mock).mockResolvedValueOnce({
       empty: true,
@@ -771,8 +769,7 @@ describe('AppProvider Flow & Methods', () => {
     consoleSpy.mockRestore();
   });
 
-  test('covers loadVendorBookings demo vendor, snapshot sorting, and error callback', async () => {
-    // 1. Demo vendor in session restoring triggers DEMO_APP_VENDOR_BOOKINGS
+  test('covers loadVendorBookings demo vendor restore', async () => {
     await AsyncStorage.setItem('userProfile', JSON.stringify(DEMO_APP_VENDOR_USER));
     (getDoc as jest.Mock).mockResolvedValueOnce({
       exists: () => true,
@@ -786,9 +783,13 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await waitFor(() => expect(latestContext?.vendorBookings?.length).toBeGreaterThan(0));
+    await waitFor(() => {
+      expect(latestContext?.userProfile?.id).toBe(DEMO_APP_VENDOR_USER.id);
+      expect(latestContext?.vendorBookings?.length).toBeGreaterThan(0);
+    });
+  });
 
-    // 2. Snapshot callback with documents to sort for real vendor
+  test('covers loadVendorBookings snapshot sorting and listener error', async () => {
     let capturedNext: any;
     let capturedErr: any;
     (onSnapshot as jest.Mock).mockImplementation((q, next, err) => {
@@ -803,8 +804,15 @@ describe('AppProvider Flow & Methods', () => {
     });
     (getDoc as jest.Mock).mockResolvedValueOnce({
       exists: () => true,
-      data: () => ({ id: 'snap_vendor_uid', role: 'vendor', name: 'Snap Vendor' }),
+      data: () => ({ id: 'cred-1', role: 'vendor', name: 'Snap Vendor' }),
     });
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+    await waitFor(() => expect(latestContext?.loading).toBe(false));
 
     await act(async () => {
       await latestContext.loginWithGoogle('vendor');
@@ -822,7 +830,7 @@ describe('AppProvider Flow & Methods', () => {
       expect(latestContext.vendorBookings[0]?.id).toBe('b_new');
     }
 
-    // 3. Snapshot error callback
+    // Snapshot error callback
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     if (capturedErr) {
       act(() => {
@@ -834,7 +842,6 @@ describe('AppProvider Flow & Methods', () => {
   });
 
   test('covers fetchMoreTrips zero-docs branch and catch error branch', async () => {
-    // Initial trips to populate lastVisible
     const mockTripList = Array.from({ length: 10 }, (_, i) => ({
       id: `trip_${i}`,
       data: () => ({ title: `Trip ${i}`, status: 'published', packages: [{ price: 999 }] }),
@@ -870,7 +877,6 @@ describe('AppProvider Flow & Methods', () => {
     expect(latestContext.hasMoreTrips).toBe(false);
 
     // 2. fetchMoreTrips error catch
-    // Reset hasMoreTrips back to true by refreshing
     (getDocs as jest.Mock).mockResolvedValueOnce({
       empty: false,
       docs: mockTripList,
@@ -893,7 +899,7 @@ describe('AppProvider Flow & Methods', () => {
     consoleSpy.mockRestore();
   });
 
-  test('covers loadSession offline/error fallback, doc not found, and JSON parse failure', async () => {
+  test('covers loadSession doc not found and offline fallback', async () => {
     // 1. Cached profile but Firestore getDoc returns exists: false
     await AsyncStorage.setItem('userProfile', JSON.stringify({ id: 'vendor_cache_only', name: 'Cache Only', role: 'vendor' }));
     (getDoc as jest.Mock).mockResolvedValueOnce({ exists: () => false });
@@ -907,6 +913,8 @@ describe('AppProvider Flow & Methods', () => {
     await waitFor(() => {
       expect(latestContext?.userProfile?.id).toBe('vendor_cache_only');
     });
+
+    cleanup();
 
     // 2. Cached profile but Firestore getDoc throws (offline)
     const cachedProfile = { id: 'cached_offline_vendor', name: 'Offline Vendor', role: 'vendor' };
@@ -922,6 +930,8 @@ describe('AppProvider Flow & Methods', () => {
     await waitFor(() => {
       expect(latestContext?.userProfile?.id).toBe('cached_offline_vendor');
     });
+
+    cleanup();
 
     // 3. Invalid JSON in AsyncStorage
     await AsyncStorage.setItem('userProfile', 'invalid{json');
@@ -939,13 +949,12 @@ describe('AppProvider Flow & Methods', () => {
     consoleSpy.mockRestore();
   });
 
-  test('covers loginWithGoogle edge cases: missing user, getTokens fallback and failure, traveller role assignment', async () => {
+  test('covers loginWithGoogle missing user, getTokens fallback, and token failure', async () => {
     render(
       <AppProvider>
         <Consumer />
       </AppProvider>
     );
-
     await waitFor(() => expect(latestContext?.loading).toBe(false));
 
     // 1. Missing user info from Google
@@ -979,15 +988,23 @@ describe('AppProvider Flow & Methods', () => {
       await latestContext.loginWithGoogle('vendor');
     });
     expect(Alert.alert).toHaveBeenCalledWith('Login Failed', expect.stringContaining('Could not obtain Google ID token'));
+  });
 
-    // 4. Logging in as traveller when existing user doc has no role
+  test('covers loginWithGoogle traveller role assignment when user has no existing role', async () => {
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+    await waitFor(() => expect(latestContext?.loading).toBe(false));
+
     (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({
       type: 'success',
       data: { user: { email: 'traveller_norole@test.com', name: 'No Role' }, idToken: 'token_norole' },
     });
     (getDoc as jest.Mock).mockResolvedValueOnce({
       exists: () => true,
-      data: () => ({ email: 'traveller_norole@test.com', name: 'No Role' }), // role undefined
+      data: () => ({ email: 'traveller_norole@test.com', name: 'No Role' }),
     });
 
     await act(async () => {
@@ -1006,7 +1023,6 @@ describe('AppProvider Flow & Methods', () => {
           <Consumer />
         </AppProvider>
       );
-
       await waitFor(() => expect(latestContext?.loading).toBe(false));
 
       // 1. Web mockTravellerLogin success and anonymous auth error catch
@@ -1052,15 +1068,6 @@ describe('AppProvider Flow & Methods', () => {
   });
 
   test('covers logout with active listener unsubscribe and signout rejection', async () => {
-    render(
-      <AppProvider>
-        <Consumer />
-      </AppProvider>
-    );
-
-    await waitFor(() => expect(latestContext?.loading).toBe(false));
-
-    // Sign in as real vendor with active listener
     const mockUnsub = jest.fn();
     (onSnapshot as jest.Mock).mockReturnValueOnce(mockUnsub);
     (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({
@@ -1069,14 +1076,20 @@ describe('AppProvider Flow & Methods', () => {
     });
     (getDoc as jest.Mock).mockResolvedValueOnce({
       exists: () => true,
-      data: () => ({ id: 'uid_logout', role: 'vendor' }),
+      data: () => ({ id: 'cred-1', role: 'vendor' }),
     });
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+    await waitFor(() => expect(latestContext?.loading).toBe(false));
 
     await act(async () => {
       await latestContext.loginWithGoogle('vendor');
     });
 
-    // Make Google and Firebase signouts reject to cover error catches
     (GoogleSignin.signOut as jest.Mock).mockRejectedValueOnce(new Error('Google signOut failed'));
     (signOut as jest.Mock).mockRejectedValueOnce(new Error('Firebase signOut failed'));
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
