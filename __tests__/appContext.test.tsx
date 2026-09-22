@@ -61,7 +61,9 @@ describe('AppSecurityAttackThrottler', () => {
 describe('useAppContext hook', () => {
   test('throws error when used outside of AppProvider', () => {
     let capturedErr: any = null;
+    let didRun = false;
     const ComponentOutside = () => {
+      didRun = true;
       try {
         useAppContext();
       } catch (err: any) {
@@ -70,6 +72,7 @@ describe('useAppContext hook', () => {
       return null;
     };
     render(<ComponentOutside />);
+    console.log('didRun:', didRun, 'capturedErr:', capturedErr);
     expect(capturedErr?.message).toBe('useAppContext must be used within an AppProvider');
   });
 });
