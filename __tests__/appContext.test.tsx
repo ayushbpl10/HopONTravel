@@ -677,9 +677,8 @@ describe('AppProvider Flow & Methods', () => {
 
   test('covers notification handler callback and android push notification registration', async () => {
     // 1. Notification handler configuration
-    const notificationCalls = (Notifications.setNotificationHandler as jest.Mock).mock.calls;
-    if (notificationCalls.length > 0 && notificationCalls[0][0]?.handleNotification) {
-      const config = await notificationCalls[0][0].handleNotification();
+    if ((global as any).__lastNotificationHandler?.handleNotification) {
+      const config = await (global as any).__lastNotificationHandler.handleNotification();
       expect(config).toEqual({
         shouldShowAlert: true,
         shouldPlaySound: true,
@@ -692,7 +691,7 @@ describe('AppProvider Flow & Methods', () => {
     // 2. Android push notification registration
     const originalOS = Platform.OS;
     try {
-      (Platform as any).OS = 'android';
+      Object.defineProperty(Platform, 'OS', { value: 'android', configurable: true });
       (Notifications.getPermissionsAsync as jest.Mock).mockResolvedValueOnce({ status: 'undetermined' });
       (Notifications.requestPermissionsAsync as jest.Mock).mockResolvedValueOnce({ status: 'granted' });
       (Notifications.getExpoPushTokenAsync as jest.Mock).mockResolvedValueOnce({ data: 'expo-token-android' });
@@ -728,7 +727,7 @@ describe('AppProvider Flow & Methods', () => {
         await latestContext.loginWithGoogle('vendor');
       });
     } finally {
-      (Platform as any).OS = originalOS;
+      Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
     }
   });
 
@@ -746,17 +745,14 @@ describe('AppProvider Flow & Methods', () => {
     await waitFor(() => expect(latestContext?.loading).toBe(false));
     expect(consoleSpy).toHaveBeenCalledWith('Error loading trips:', expect.any(Error));
 
-    // 2. seedInitialData error catch
-    (addDoc as jest.Mock).mockRejectedValueOnce(new Error('Failed to seed'));
-    await act(async () => {
-      // Access seed via context or refresh
-      await latestContext.refreshTrips();
+    // 2. seedInitialData error catch when initial query returns 0 trips
+    (getDocs as jest.Mock).mockResolvedValueOnce({
+      empty: true,
+      docs: [],
+      forEach: jest.fn(),
     });
+    (addDoc as jest.Mock).mockRejectedValueOnce(new Error('Failed to seed'));
 
-    consoleSpy.mockRestore();
-  });
-
-  test('covers loadVendorBookings demo vendor, snapshot sorting, and error callback', async () => {
     render(
       <AppProvider>
         <Consumer />
@@ -764,19 +760,48 @@ describe('AppProvider Flow & Methods', () => {
     );
 
     await waitFor(() => expect(latestContext?.loading).toBe(false));
+    expect(consoleSpy).toHaveBeenCalledWith('Error seeding initial data:', expect.any(Error));
 
-    // 1. Snapshot callback with documents to sort
+    consoleSpy.mockRestore();
+  });
+
+  test('covers loadVendorBookings demo vendor, snapshot sorting, and error callback', async () => {
+    // 1. Demo vendor in session restoring triggers DEMO_APP_VENDOR_BOOKINGS
+    await AsyncStorage.setItem('userProfile', JSON.stringify(DEMO_APP_VENDOR_USER));
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      id: DEMO_APP_VENDOR_USER.id,
+      data: () => DEMO_APP_VENDOR_USER,
+    });
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => expect(latestContext?.vendorBookings?.length).toBeGreaterThan(0));
+
+    // 2. Snapshot callback with documents to sort for real vendor
     let capturedNext: any;
     let capturedErr: any;
-    (onSnapshot as jest.Mock).mockImplementationOnce((q, next, err) => {
+    (onSnapshot as jest.Mock).mockImplementation((q, next, err) => {
       capturedNext = next;
       capturedErr = err;
       return jest.fn();
     });
 
-    // Sign in to get vendor profile
+    (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({
+      type: 'success',
+      data: { user: { email: 'snap_vendor@test.com', name: 'Snap Vendor' }, idToken: 'token_snap' },
+    });
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ id: 'snap_vendor_uid', role: 'vendor', name: 'Snap Vendor' }),
+    });
+
     await act(async () => {
-      await latestContext.mockVendorLogin();
+      await latestContext.loginWithGoogle('vendor');
     });
 
     if (capturedNext) {
@@ -791,7 +816,7 @@ describe('AppProvider Flow & Methods', () => {
       expect(latestContext.vendorBookings[0]?.id).toBe('b_new');
     }
 
-    // 2. Snapshot error callback
+    // 3. Snapshot error callback
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     if (capturedErr) {
       act(() => {
@@ -862,8 +887,22 @@ describe('AppProvider Flow & Methods', () => {
     consoleSpy.mockRestore();
   });
 
-  test('covers loadSession offline/error fallback and JSON parse failure', async () => {
-    // 1. Cached profile but Firestore getDoc throws (offline)
+  test('covers loadSession offline/error fallback, doc not found, and JSON parse failure', async () => {
+    // 1. Cached profile but Firestore getDoc returns exists: false
+    await AsyncStorage.setItem('userProfile', JSON.stringify({ id: 'vendor_cache_only', name: 'Cache Only', role: 'vendor' }));
+    (getDoc as jest.Mock).mockResolvedValueOnce({ exists: () => false });
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => {
+      expect(latestContext?.userProfile?.id).toBe('vendor_cache_only');
+    });
+
+    // 2. Cached profile but Firestore getDoc throws (offline)
     const cachedProfile = { id: 'cached_offline_vendor', name: 'Offline Vendor', role: 'vendor' };
     await AsyncStorage.setItem('userProfile', JSON.stringify(cachedProfile));
     (getDoc as jest.Mock).mockRejectedValueOnce(new Error('Offline unavailable'));
@@ -878,7 +917,7 @@ describe('AppProvider Flow & Methods', () => {
       expect(latestContext?.userProfile?.id).toBe('cached_offline_vendor');
     });
 
-    // 2. Invalid JSON in AsyncStorage
+    // 3. Invalid JSON in AsyncStorage
     await AsyncStorage.setItem('userProfile', 'invalid{json');
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -954,7 +993,7 @@ describe('AppProvider Flow & Methods', () => {
   test('covers mock logins on web platform with anonymous auth and storage errors', async () => {
     const originalOS = Platform.OS;
     try {
-      (Platform as any).OS = 'web';
+      Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
 
       render(
         <AppProvider>
@@ -1002,7 +1041,7 @@ describe('AppProvider Flow & Methods', () => {
 
       AsyncStorage.setItem = originalSetItem;
     } finally {
-      (Platform as any).OS = originalOS;
+      Object.defineProperty(Platform, 'OS', { value: originalOS, configurable: true });
     }
   });
 
@@ -1015,9 +1054,20 @@ describe('AppProvider Flow & Methods', () => {
 
     await waitFor(() => expect(latestContext?.loading).toBe(false));
 
-    // Sign in as real vendor to establish listener
+    // Sign in as real vendor with active listener
+    const mockUnsub = jest.fn();
+    (onSnapshot as jest.Mock).mockReturnValueOnce(mockUnsub);
+    (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({
+      type: 'success',
+      data: { user: { email: 'v_logout@test.com', name: 'Vendor Logout' }, idToken: 'token_logout' },
+    });
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ id: 'uid_logout', role: 'vendor' }),
+    });
+
     await act(async () => {
-      await latestContext.mockVendorLogin();
+      await latestContext.loginWithGoogle('vendor');
     });
 
     // Make Google and Firebase signouts reject to cover error catches
@@ -1029,12 +1079,13 @@ describe('AppProvider Flow & Methods', () => {
       await latestContext.logout();
     });
 
+    expect(mockUnsub).toHaveBeenCalled();
     expect(latestContext.userProfile).toBeNull();
     expect(latestContext.vendorBookings).toEqual([]);
     consoleSpy.mockRestore();
   });
 
-  test('covers throttler lockouts, auth fallbacks, and seat update error in trip/booking methods', async () => {
+  test('covers throttler lockouts, auth fallbacks, duplicate lock, and seat update error in trip/booking methods', async () => {
     const realVendor = {
       id: 'real_vendor_coverage',
       email: 'vendor_cov@real.com',
@@ -1107,7 +1158,34 @@ describe('AppProvider Flow & Methods', () => {
 
     AppSecurityAttackThrottler.reset();
 
-    // 6. bookTrip when auth.currentUser is null and tripDocSnap does NOT exist
+    // 6. Duplicate booking submission lock
+    let resolveAddDoc: any;
+    (addDoc as jest.Mock).mockImplementationOnce(() => new Promise(res => { resolveAddDoc = res; }));
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ id: 'trip_dup', batches: [] }),
+    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const b1 = latestContext.bookTrip({
+      tripId: 'trip_dup',
+      travelerName: 'Dup One',
+      travelerPhone: '+919988776655',
+      seats: 1,
+      totalPrice: 1000,
+    });
+    const b2 = latestContext.bookTrip({
+      tripId: 'trip_dup',
+      travelerName: 'Dup Two',
+      travelerPhone: '+919988776655',
+      seats: 1,
+      totalPrice: 1000,
+    });
+    if (resolveAddDoc) resolveAddDoc({ id: 'b_resolved' });
+    await Promise.all([b1, b2]);
+    expect(warnSpy).toHaveBeenCalledWith('Booking submission in progress, ignoring duplicate call.');
+    warnSpy.mockRestore();
+
+    // 7. bookTrip when auth.currentUser is null and tripDocSnap does NOT exist
     (auth as any).currentUser = null;
     (getDoc as jest.Mock).mockResolvedValueOnce({ exists: () => false });
 
@@ -1123,7 +1201,7 @@ describe('AppProvider Flow & Methods', () => {
     });
     expect(addDoc).toHaveBeenCalled();
 
-    // 7. bookTrip seat update catch error
+    // 8. bookTrip seat update catch error
     (auth as any).currentUser = originalCurrentUser;
     (getDoc as jest.Mock).mockResolvedValueOnce({
       exists: () => true,
@@ -1147,7 +1225,7 @@ describe('AppProvider Flow & Methods', () => {
     });
     expect(addDoc).toHaveBeenCalled();
 
-    // 8. updateBookingStatus notification lookup error catch
+    // 9. updateBookingStatus notification lookup error catch
     (getDoc as jest.Mock).mockResolvedValueOnce({
       exists: () => true,
       data: () => ({ travelerEmail: 'traveller_err@test.com', bookingId: 'ATGL-ERR' }),
