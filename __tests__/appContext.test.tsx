@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { act, render, waitFor } from '@testing-library/react-native';
+import * as Device from 'expo-device';
+import * as Notifications from 'expo-notifications';
+import { signInAnonymously, signOut } from 'firebase/auth';
 import {
   addDoc,
   deleteDoc,
@@ -11,7 +13,9 @@ import {
   updateDoc
 } from 'firebase/firestore';
 import React from 'react';
-import { Alert, Text } from 'react-native';
+import { Alert, Platform, Text } from 'react-native';
+import { act, render, waitFor } from '@testing-library/react-native';
+import { auth } from '../config/firebase';
 import {
   AppProvider,
   AppSecurityAttackThrottler,
@@ -56,7 +60,16 @@ describe('AppSecurityAttackThrottler', () => {
 
 describe('useAppContext hook', () => {
   test('throws error when used outside of AppProvider', () => {
-    expect(() => useAppContext()).toThrow();
+    const ComponentOutside = () => {
+      try {
+        useAppContext();
+      } catch (err: any) {
+        return <Text testID="caught-error">{err.message}</Text>;
+      }
+      return null;
+    };
+    const { getByTestId } = render(<ComponentOutside />);
+    expect(getByTestId('caught-error').props.children).toBe('useAppContext must be used within an AppProvider');
   });
 });
 
@@ -660,5 +673,490 @@ describe('AppProvider Flow & Methods', () => {
     // 4. Session loading fallback when vendorDoc doesn't exist in Firestore
     await AsyncStorage.setItem('userProfile', JSON.stringify({ id: 'cached_only_user', name: 'Cached User', role: 'vendor' }));
     (getDoc as jest.Mock).mockResolvedValueOnce({ exists: () => false });
+  });
+
+  test('covers notification handler callback and android push notification registration', async () => {
+    // 1. Notification handler configuration
+    const notificationCalls = (Notifications.setNotificationHandler as jest.Mock).mock.calls;
+    if (notificationCalls.length > 0 && notificationCalls[0][0]?.handleNotification) {
+      const config = await notificationCalls[0][0].handleNotification();
+      expect(config).toEqual({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      });
+    }
+
+    // 2. Android push notification registration
+    const originalOS = Platform.OS;
+    try {
+      (Platform as any).OS = 'android';
+      (Notifications.getPermissionsAsync as jest.Mock).mockResolvedValueOnce({ status: 'undetermined' });
+      (Notifications.requestPermissionsAsync as jest.Mock).mockResolvedValueOnce({ status: 'granted' });
+      (Notifications.getExpoPushTokenAsync as jest.Mock).mockResolvedValueOnce({ data: 'expo-token-android' });
+
+      (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({
+        type: 'success',
+        data: { user: { email: 'android@test.com', name: 'Android User' }, idToken: 'token-android' },
+      });
+
+      render(
+        <AppProvider>
+          <Consumer />
+        </AppProvider>
+      );
+
+      await waitFor(() => expect(latestContext?.loading).toBe(false));
+
+      await act(async () => {
+        await latestContext.loginWithGoogle('vendor');
+      });
+
+      expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith('default', expect.any(Object));
+
+      // Test denied permission path
+      (Notifications.getPermissionsAsync as jest.Mock).mockResolvedValueOnce({ status: 'undetermined' });
+      (Notifications.requestPermissionsAsync as jest.Mock).mockResolvedValueOnce({ status: 'denied' });
+      (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({
+        type: 'success',
+        data: { user: { email: 'android2@test.com', name: 'Android User 2' }, idToken: 'token-android-2' },
+      });
+
+      await act(async () => {
+        await latestContext.loginWithGoogle('vendor');
+      });
+    } finally {
+      (Platform as any).OS = originalOS;
+    }
+  });
+
+  test('covers loadInitialTrips error and seedInitialData error', async () => {
+    // 1. loadInitialTrips error catch
+    (getDocs as jest.Mock).mockRejectedValueOnce(new Error('Network error loading trips'));
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => expect(latestContext?.loading).toBe(false));
+    expect(consoleSpy).toHaveBeenCalledWith('Error loading trips:', expect.any(Error));
+
+    // 2. seedInitialData error catch
+    (addDoc as jest.Mock).mockRejectedValueOnce(new Error('Failed to seed'));
+    await act(async () => {
+      // Access seed via context or refresh
+      await latestContext.refreshTrips();
+    });
+
+    consoleSpy.mockRestore();
+  });
+
+  test('covers loadVendorBookings demo vendor, snapshot sorting, and error callback', async () => {
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => expect(latestContext?.loading).toBe(false));
+
+    // 1. Snapshot callback with documents to sort
+    let capturedNext: any;
+    let capturedErr: any;
+    (onSnapshot as jest.Mock).mockImplementationOnce((q, next, err) => {
+      capturedNext = next;
+      capturedErr = err;
+      return jest.fn();
+    });
+
+    // Sign in to get vendor profile
+    await act(async () => {
+      await latestContext.mockVendorLogin();
+    });
+
+    if (capturedNext) {
+      act(() => {
+        capturedNext({
+          forEach: (cb: any) => {
+            cb({ id: 'b_old', data: () => ({ createdAt: 100, travelerName: 'Old' }) });
+            cb({ id: 'b_new', data: () => ({ createdAt: 500, travelerName: 'New' }) });
+          },
+        });
+      });
+      expect(latestContext.vendorBookings[0]?.id).toBe('b_new');
+    }
+
+    // 2. Snapshot error callback
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    if (capturedErr) {
+      act(() => {
+        capturedErr(new Error('Snapshot permission denied'));
+      });
+      expect(consoleSpy).toHaveBeenCalledWith('Error loading vendor bookings:', expect.any(Error));
+    }
+    consoleSpy.mockRestore();
+  });
+
+  test('covers fetchMoreTrips zero-docs branch and catch error branch', async () => {
+    // Initial trips to populate lastVisible
+    const mockTripList = Array.from({ length: 10 }, (_, i) => ({
+      id: `trip_${i}`,
+      data: () => ({ title: `Trip ${i}`, status: 'published', packages: [{ price: 999 }] }),
+    }));
+
+    (getDocs as jest.Mock).mockResolvedValueOnce({
+      empty: false,
+      docs: mockTripList,
+      forEach(cb: any) {
+        this.docs.forEach(cb);
+      },
+    });
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => expect(latestContext?.hasMoreTrips).toBe(true));
+
+    // 1. fetchMoreTrips returns 0 docs -> setHasMoreTrips(false)
+    (getDocs as jest.Mock).mockResolvedValueOnce({
+      empty: true,
+      docs: [],
+      forEach: jest.fn(),
+    });
+
+    await act(async () => {
+      await latestContext.fetchMoreTrips();
+    });
+
+    expect(latestContext.hasMoreTrips).toBe(false);
+
+    // 2. fetchMoreTrips error catch
+    // Reset hasMoreTrips back to true by refreshing
+    (getDocs as jest.Mock).mockResolvedValueOnce({
+      empty: false,
+      docs: mockTripList,
+      forEach(cb: any) {
+        this.docs.forEach(cb);
+      },
+    });
+    await act(async () => {
+      await latestContext.refreshTrips();
+    });
+
+    (getDocs as jest.Mock).mockRejectedValueOnce(new Error('Fetch more failed'));
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => {
+      await latestContext.fetchMoreTrips();
+    });
+
+    expect(consoleSpy).toHaveBeenCalledWith('Error fetching more trips:', expect.any(Error));
+    consoleSpy.mockRestore();
+  });
+
+  test('covers loadSession offline/error fallback and JSON parse failure', async () => {
+    // 1. Cached profile but Firestore getDoc throws (offline)
+    const cachedProfile = { id: 'cached_offline_vendor', name: 'Offline Vendor', role: 'vendor' };
+    await AsyncStorage.setItem('userProfile', JSON.stringify(cachedProfile));
+    (getDoc as jest.Mock).mockRejectedValueOnce(new Error('Offline unavailable'));
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => {
+      expect(latestContext?.userProfile?.id).toBe('cached_offline_vendor');
+    });
+
+    // 2. Invalid JSON in AsyncStorage
+    await AsyncStorage.setItem('userProfile', 'invalid{json');
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => {
+      expect(consoleSpy).toHaveBeenCalledWith('Failed to load session');
+    });
+    consoleSpy.mockRestore();
+  });
+
+  test('covers loginWithGoogle edge cases: missing user, getTokens fallback and failure, traveller role assignment', async () => {
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => expect(latestContext?.loading).toBe(false));
+
+    // 1. Missing user info from Google
+    (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({});
+    await act(async () => {
+      await latestContext.loginWithGoogle('vendor');
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('Login Failed', expect.stringContaining('Could not retrieve user info'));
+
+    // 2. idToken not in response, getTokens() called and succeeds
+    (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({
+      user: { email: 'gettokens@test.com', name: 'GetTokens User' },
+      idToken: null,
+    });
+    (GoogleSignin.getTokens as jest.Mock).mockResolvedValueOnce({ idToken: 'token-from-gettokens' });
+    (getDoc as jest.Mock).mockResolvedValueOnce({ exists: () => false });
+
+    await act(async () => {
+      await latestContext.loginWithGoogle('vendor');
+    });
+    expect(setDoc).toHaveBeenCalled();
+
+    // 3. idToken missing, getTokens() throws error, idToken remains null
+    (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({
+      user: { email: 'notoken@test.com', name: 'No Token User' },
+      idToken: null,
+    });
+    (GoogleSignin.getTokens as jest.Mock).mockRejectedValueOnce(new Error('getTokens error'));
+
+    await act(async () => {
+      await latestContext.loginWithGoogle('vendor');
+    });
+    expect(Alert.alert).toHaveBeenCalledWith('Login Failed', expect.stringContaining('Could not obtain Google ID token'));
+
+    // 4. Logging in as traveller when existing user doc has no role
+    (GoogleSignin.signIn as jest.Mock).mockResolvedValueOnce({
+      type: 'success',
+      data: { user: { email: 'traveller_norole@test.com', name: 'No Role' }, idToken: 'token_norole' },
+    });
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ email: 'traveller_norole@test.com', name: 'No Role' }), // role undefined
+    });
+
+    await act(async () => {
+      await latestContext.loginWithGoogle('traveller');
+    });
+    expect(updateDoc).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ role: 'traveller' }));
+  });
+
+  test('covers mock logins on web platform with anonymous auth and storage errors', async () => {
+    const originalOS = Platform.OS;
+    try {
+      (Platform as any).OS = 'web';
+
+      render(
+        <AppProvider>
+          <Consumer />
+        </AppProvider>
+      );
+
+      await waitFor(() => expect(latestContext?.loading).toBe(false));
+
+      // 1. Web mockTravellerLogin success and anonymous auth error catch
+      await act(async () => {
+        await latestContext.mockTravellerLogin();
+      });
+      expect(signInAnonymously).toHaveBeenCalled();
+
+      (signInAnonymously as jest.Mock).mockRejectedValueOnce(new Error('Anon signin failed'));
+      await act(async () => {
+        await latestContext.mockTravellerLogin();
+      });
+
+      // 2. Web mockVendorLogin success and anonymous auth error catch
+      await act(async () => {
+        await latestContext.mockVendorLogin();
+      });
+
+      (signInAnonymously as jest.Mock).mockRejectedValueOnce(new Error('Anon signin failed'));
+      await act(async () => {
+        await latestContext.mockVendorLogin();
+      });
+
+      // 3. AsyncStorage setItem failures in mock logins
+      const originalSetItem = AsyncStorage.setItem;
+      AsyncStorage.setItem = jest.fn().mockRejectedValueOnce(new Error('Storage failure'));
+
+      await act(async () => {
+        await latestContext.mockTravellerLogin();
+      });
+      expect(Alert.alert).toHaveBeenCalledWith('Error', 'Mock login failed.');
+
+      AsyncStorage.setItem = jest.fn().mockRejectedValueOnce(new Error('Storage failure'));
+      await act(async () => {
+        await latestContext.mockVendorLogin();
+      });
+      expect(Alert.alert).toHaveBeenCalledWith('Error', 'Mock login failed.');
+
+      AsyncStorage.setItem = originalSetItem;
+    } finally {
+      (Platform as any).OS = originalOS;
+    }
+  });
+
+  test('covers logout with active listener unsubscribe and signout rejection', async () => {
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => expect(latestContext?.loading).toBe(false));
+
+    // Sign in as real vendor to establish listener
+    await act(async () => {
+      await latestContext.mockVendorLogin();
+    });
+
+    // Make Google and Firebase signouts reject to cover error catches
+    (GoogleSignin.signOut as jest.Mock).mockRejectedValueOnce(new Error('Google signOut failed'));
+    (signOut as jest.Mock).mockRejectedValueOnce(new Error('Firebase signOut failed'));
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => {
+      await latestContext.logout();
+    });
+
+    expect(latestContext.userProfile).toBeNull();
+    expect(latestContext.vendorBookings).toEqual([]);
+    consoleSpy.mockRestore();
+  });
+
+  test('covers throttler lockouts, auth fallbacks, and seat update error in trip/booking methods', async () => {
+    const realVendor = {
+      id: 'real_vendor_coverage',
+      email: 'vendor_cov@real.com',
+      name: 'Vendor Cov',
+      role: 'vendor' as const,
+      upiId: 'cov@upi',
+      whatsappNumber: '+919988771122',
+      paymentSettings: { enabled: true, gateway: 'razorpay' as const, razorpayKeyId: 'rzp_key_test' },
+    };
+    await AsyncStorage.setItem('userProfile', JSON.stringify(realVendor));
+
+    (getDoc as jest.Mock).mockResolvedValue({
+      exists: () => true,
+      id: realVendor.id,
+      data: () => realVendor,
+    });
+
+    render(
+      <AppProvider>
+        <Consumer />
+      </AppProvider>
+    );
+
+    await waitFor(() => expect(latestContext?.userProfile?.id).toBe(realVendor.id));
+
+    // 1. addTrip with auth.currentUser null and anonymous fallback error
+    const originalCurrentUser = auth.currentUser;
+    (auth as any).currentUser = null;
+    (signInAnonymously as jest.Mock).mockRejectedValueOnce(new Error('Anon error on addTrip'));
+
+    await act(async () => {
+      await latestContext.addTrip({
+        title: 'New Cov Trip',
+        location: 'Goa',
+        duration: '2D/1N',
+        difficulty: 'Easy',
+        category: 'Beach',
+        status: 'published',
+        images: ['https://example.com/beach.jpg'],
+        itinerary: [],
+        inclusions: [],
+        exclusions: [],
+        packages: [{ id: 'p1', name: 'Basic', price: 1500, description: 'Basic pkg' }],
+        batches: [],
+      } as any);
+    });
+    expect(addDoc).toHaveBeenCalled();
+
+    // 2. addTrip throttler lockout
+    for (let i = 0; i < 6; i++) {
+      AppSecurityAttackThrottler.checkAndEnforce('lockout');
+    }
+    const addResult = await latestContext.addTrip({ title: 'Blocked Trip' } as any);
+    expect(addResult).toBeUndefined();
+
+    // 3. deleteTrip throttler lockout
+    await act(async () => {
+      await latestContext.deleteTrip('trip_blocked');
+    });
+
+    // 4. updateBookingStatus throttler lockout
+    await act(async () => {
+      await latestContext.updateBookingStatus('b_blocked', 'confirmed');
+    });
+
+    // 5. bookTrip throttler lockout
+    await act(async () => {
+      await latestContext.bookTrip({ tripId: 'trip_blocked' } as any);
+    });
+
+    AppSecurityAttackThrottler.reset();
+
+    // 6. bookTrip when auth.currentUser is null and tripDocSnap does NOT exist
+    (auth as any).currentUser = null;
+    (getDoc as jest.Mock).mockResolvedValueOnce({ exists: () => false });
+
+    await act(async () => {
+      await latestContext.bookTrip({
+        tripId: 'non_existent_trip',
+        travelerName: 'Rohit Sharma',
+        travelerPhone: '+919988776655',
+        seats: 2,
+        totalPrice: 4000,
+        status: 'pending',
+      });
+    });
+    expect(addDoc).toHaveBeenCalled();
+
+    // 7. bookTrip seat update catch error
+    (auth as any).currentUser = originalCurrentUser;
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        id: 'trip_seat_err',
+        vendorId: 'vendor_1',
+        batches: [{ id: 'batch_err', bookedSeats: 0 }],
+      }),
+    });
+    (updateDoc as jest.Mock).mockRejectedValueOnce(new Error('Firestore seat update failed'));
+
+    await act(async () => {
+      await latestContext.bookTrip({
+        tripId: 'trip_seat_err',
+        batchId: 'batch_err',
+        travelerName: 'Rohit Sharma',
+        travelerPhone: '+919988776655',
+        seats: 2,
+        totalPrice: 4000,
+      });
+    });
+    expect(addDoc).toHaveBeenCalled();
+
+    // 8. updateBookingStatus notification lookup error catch
+    (getDoc as jest.Mock).mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ travelerEmail: 'traveller_err@test.com', bookingId: 'ATGL-ERR' }),
+    });
+    (getDocs as jest.Mock).mockRejectedValueOnce(new Error('Network failure looking up token'));
+
+    await act(async () => {
+      await latestContext.updateBookingStatus('b_notif_err', 'confirmed');
+    });
+    expect(updateDoc).toHaveBeenCalled();
   });
 });

@@ -37,7 +37,9 @@ jest.mock('expo-device', () => ({
 }));
 
 jest.mock('expo-notifications', () => ({
-  setNotificationHandler: jest.fn(),
+  setNotificationHandler: jest.fn((config) => {
+    global.__lastNotificationHandler = config;
+  }),
   setNotificationChannelAsync: jest.fn(),
   getPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
   requestPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
@@ -128,8 +130,10 @@ jest.mock('firebase/firestore', () => ({
   setDoc: jest.fn(() => Promise.resolve()),
   deleteDoc: jest.fn(() => Promise.resolve()),
   arrayUnion: jest.fn((...args) => args),
-  onSnapshot: jest.fn((ref, callback) => {
-    callback({ exists: () => true, data: () => ({}), forEach: jest.fn(), docs: [] });
+  onSnapshot: jest.fn((ref, callback, errorCallback) => {
+    if (callback) {
+      callback({ exists: () => true, data: () => ({}), forEach: jest.fn(), docs: [] });
+    }
     return jest.fn(); // Unsubscribe
   }),
 }));
