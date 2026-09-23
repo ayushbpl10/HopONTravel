@@ -266,16 +266,18 @@ try {
 // ============================================================================
 logHeader(7, 7, 'Security, Defensive Locks & E2E User Journeys');
 try {
-  console.log('  Running Security & Concurrency Test Suite (199 checks)...');
+  console.log('  Running Security & Concurrency Test Suite...');
   const secProc = spawnSync('node', ['scripts/test-security-and-flows.js'], {
     cwd: ROOT_DIR,
     encoding: 'utf8',
     shell: true
   });
 
-  const secPassed = secProc.status === 0 && secProc.stdout.includes('199/199 TESTS PASSED');
+  const secPassed = secProc.status === 0 && secProc.stdout.includes('ALL SECURITY, FUNCTIONAL FLOW & UI/UX CHECKS PASSED');
   if (secPassed) {
-    pass('Security & Flow tests: 199/199 checks passed (100.0%).');
+    const summaryMatch = secProc.stdout.match(/TEST SUMMARY: ([^\r\n]+)/);
+    const summaryText = summaryMatch ? summaryMatch[1] : 'All checks passed (100.0%)';
+    pass(`Security & Flow tests: ${summaryText}.`);
   } else {
     fail('Security & Flow test suite failed', secProc.stderr || secProc.stdout);
   }

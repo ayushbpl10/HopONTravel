@@ -250,6 +250,7 @@ function verifySecurityHeadersAndCSP() {
     if (cspMatch) {
       const csp = cspMatch[0];
       assert(csp.includes('https://www.gstatic.com'), `${page} CSP allows Firebase CDN (gstatic.com)`);
+      assert(csp.includes('connect-src') && csp.includes('https://*.gstatic.com'), `${page} CSP connect-src allows gstatic.com for source maps`);
       assert(csp.includes('https://fonts.googleapis.com'), `${page} CSP allows Google Fonts`);
       assert(csp.includes('https://*.firebaseio.com'), `${page} CSP allows Firebase database connection`);
       assert(!csp.includes("'unsafe-eval'"), `${page} CSP does NOT allow unsafe-eval`);
@@ -263,14 +264,21 @@ function verifySecurityHeadersAndCSP() {
     assert(html.includes('http-equiv="X-Content-Type-Options" content="nosniff"'), 
       `${page} contains X-Content-Type-Options: nosniff`);
 
-    // 3. Frame Options
-    assert(html.includes('http-equiv="X-Frame-Options" content="SAMEORIGIN"'), 
-      `${page} contains X-Frame-Options: SAMEORIGIN`);
+    // 3. Frame Options (Per RFC 7034 & W3C HTML spec, X-Frame-Options must NOT be set via <meta>)
+    assert(!html.includes('http-equiv="X-Frame-Options"'), 
+      `${page} correctly omits invalid <meta http-equiv="X-Frame-Options">`);
 
     // 4. Referrer Policy
     assert(html.includes('name="referrer" content="strict-origin-when-cross-origin"'), 
       `${page} contains strict-origin-when-cross-origin referrer policy`);
   });
+
+  // 5. Server-level Security Headers (RFC 7034 compliance)
+  const serveWebJs = fs.readFileSync(path.join(__dirname, 'serve-web.js'), 'utf8');
+  assert(serveWebJs.includes("'X-Frame-Options': 'SAMEORIGIN'"), 
+    'serve-web.js enforces X-Frame-Options: SAMEORIGIN via HTTP response header');
+  assert(serveWebJs.includes("'X-Content-Type-Options': 'nosniff'"), 
+    'serve-web.js enforces X-Content-Type-Options: nosniff via HTTP response header');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
