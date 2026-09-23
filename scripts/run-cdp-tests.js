@@ -511,14 +511,14 @@ async function main() {
       const rowsCount = await client.eval('document.querySelectorAll("#vBookingsTableBody tr").length');
       if (rowsCount !== 3) throw new Error(`Expected 3 booking rows, found ${rowsCount}`);
 
-      // Approve pending booking demo_vb_2
+      // Approve pending booking demo_vb_2 - verify demo account write protection & modal
       await client.eval('updateBookingStatus("demo_vb_2", "confirmed", "rajmachi-demo", "b2", 1)');
-      const updatedConf = await client.eval('document.getElementById("vStatConfirmedBookings").textContent.trim()');
-      const updatedRev = await client.eval('document.getElementById("vStatTotalRevenue").textContent.trim()');
-      console.log(`     After Confirming Pending Booking: Confirmed=${updatedConf}, Revenue=${updatedRev}`);
-      if (updatedConf !== '3' || !updatedRev.includes('9,993')) {
-        throw new Error(`Demo vendor update failed: confirmed=${updatedConf}, rev=${updatedRev}`);
+      const isDemoModalVisible = await client.eval('document.getElementById("demoAuthModalOverlay") && document.getElementById("demoAuthModalOverlay").style.display !== "none"');
+      if (!isDemoModalVisible) {
+        throw new Error('Expected demo auth modal overlay to be displayed when demo account attempts status mutation');
       }
+      console.log('     Demo write protection verified: Demo auth modal triggered on status update attempt');
+      await client.eval('closeDemoAuthModal()');
 
       // Test CSV Export & Manifest print
       await client.eval('exportBookingsToCSV()');
