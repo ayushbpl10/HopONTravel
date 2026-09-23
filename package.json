@@ -14,7 +14,9 @@
     "test:portals": "node scripts/verify-portals.js",
     "test:responsive": "node scripts/test-mobile-responsive.js",
     "test:e2e": "node scripts/run-cdp-tests.js",
-    "test:all": "npm test && npx tsc --noEmit && npm run lint && node scripts/verify-portals.js && node scripts/test-security-and-flows.js && node scripts/test-mobile-responsive.js",
+    "test:all": "node scripts/verify-all.js",
+    "verify:all": "node scripts/verify-all.js",
+    "pre-push": "node scripts/verify-all.js",
     "build:apk": "npx expo prebuild --platform android && cd android && gradlew assembleRelease"
   },
   "jest": {
