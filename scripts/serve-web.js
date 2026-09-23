@@ -52,10 +52,12 @@ const server = http.createServer((req, res) => {
   }
 
   // 2. Sliding window request tracking
+  const isLoopback = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp.endsWith('127.0.0.1');
+  const effectiveLimit = isLoopback ? 20000 : MAX_REQUESTS;
   let history = ipRequests.get(clientIp) || [];
   history = history.filter(ts => now - ts < WINDOW_MS);
 
-  if (history.length >= MAX_REQUESTS) {
+  if (history.length >= effectiveLimit) {
     // Attack threshold breached -> lock out client
     ipLockouts.set(clientIp, now + LOCKOUT_MS);
     ipRequests.set(clientIp, history);
