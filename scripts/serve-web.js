@@ -236,7 +236,10 @@ const server = http.createServer((req, res) => {
       'Access-Control-Allow-Origin': '*',
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
       'X-Frame-Options': 'SAMEORIGIN',
-      'X-Content-Type-Options': 'nosniff'
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
     });
     fs.createReadStream(filePath).pipe(res);
   });

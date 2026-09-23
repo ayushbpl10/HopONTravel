@@ -258,6 +258,9 @@ function verifySecurityHeadersAndCSP() {
         assert(csp.includes('https://www.google.com/recaptcha/'), `${page} CSP allows Google reCAPTCHA`);
         assert(csp.includes('https://www.gstatic.com/recaptcha/'), `${page} CSP allows gstatic reCAPTCHA`);
       }
+      if (page === 'index.html') {
+        assert(csp.includes('https://cdnjs.cloudflare.com'), `${page} CSP allows cdnjs (GSAP animation suite)`);
+      }
     }
 
     // 2. Nosniff
