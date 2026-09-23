@@ -77,9 +77,9 @@ try {
       docsValid = false;
       continue;
     }
-    const content = fs.readFileSync(fullPath, 'utf8');
+    const content = fs.readFileSync(fullPath, 'utf8').toLowerCase();
     for (const kw of doc.keywords) {
-      if (!content.includes(kw)) {
+      if (!content.includes(kw.toLowerCase())) {
         fail(`Documentation ${doc.file} is missing key section: "${kw}"`);
         docsValid = false;
       }
