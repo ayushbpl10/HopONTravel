@@ -759,8 +759,7 @@ describe('AppProvider Flow & Methods', () => {
     }
   });
 
-  test('covers loadInitialTrips error and seedInitialData error', async () => {
-    // 1. loadInitialTrips error catch
+  test('covers loadInitialTrips error catch', async () => {
     (getDocs as jest.Mock).mockRejectedValueOnce(new Error('Network error loading trips'));
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -770,18 +769,25 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
+    await waitFor(() => expect(consoleSpy).toHaveBeenCalledWith('Error loading trips:', expect.any(Error)));
     await waitFor(() => expect(latestContext?.loading).toBe(false));
-    expect(consoleSpy).toHaveBeenCalledWith('Error loading trips:', expect.any(Error));
+    consoleSpy.mockRestore();
+  });
 
-    cleanup();
-
-    // 2. seedInitialData error catch when initial query returns 0 trips
-    (getDocs as jest.Mock).mockResolvedValueOnce({
-      empty: true,
-      docs: [],
-      forEach: jest.fn(),
-    });
+  test('covers seedInitialData error catch when initial query returns 0 trips', async () => {
+    (getDocs as jest.Mock)
+      .mockResolvedValueOnce({
+        empty: true,
+        docs: [],
+        forEach: jest.fn(),
+      })
+      .mockResolvedValueOnce({
+        empty: false,
+        docs: [{ id: 'seeded_fallback', data: () => ({ title: 'Fallback' }) }],
+        forEach(cb: any) { this.docs.forEach(cb); },
+      });
     (addDoc as jest.Mock).mockRejectedValueOnce(new Error('Failed to seed'));
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     render(
       <AppProvider>
@@ -789,9 +795,8 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
+    await waitFor(() => expect(consoleSpy).toHaveBeenCalledWith('Error seeding initial data:', expect.any(Error)));
     await waitFor(() => expect(latestContext?.loading).toBe(false));
-    expect(consoleSpy).toHaveBeenCalledWith('Error seeding initial data:', expect.any(Error));
-
     consoleSpy.mockRestore();
   });
 
