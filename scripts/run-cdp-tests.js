@@ -170,19 +170,19 @@ async function main() {
 
       // Check Language Switcher
       const currentLang = await client.eval('document.getElementById("langSelect").value');
-      await client.eval('changeLanguage("hi")');
+      await client.eval('changeLanguage("hi", true)');
       const hiSmallText = await client.eval('document.querySelector(".tmpl-small-text").textContent.trim()');
       if (!hiSmallText.includes('ज़िंदगी')) throw new Error(`Hindi translation mismatch: ${hiSmallText}`);
 
-      await client.eval('changeLanguage("mr")');
+      await client.eval('changeLanguage("mr", true)');
       const mrSmallText = await client.eval('document.querySelector(".tmpl-small-text").textContent.trim()');
       if (!mrSmallText.includes('आयुष्य')) throw new Error(`Marathi translation mismatch: ${mrSmallText}`);
 
-      await client.eval('changeLanguage("kn")');
+      await client.eval('changeLanguage("kn", true)');
       const knSmallText = await client.eval('document.querySelector(".tmpl-small-text").textContent.trim()');
       if (!knSmallText.includes('ಜೀವನ')) throw new Error(`Kannada translation mismatch: ${knSmallText}`);
 
-      await client.eval('changeLanguage("en")');
+      await client.eval('changeLanguage("en", true)');
     });
 
     // 2. Test Home Page: Search & Booking steps
