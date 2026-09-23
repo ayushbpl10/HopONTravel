@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import React from 'react';
 import { Alert, Platform, Text } from 'react-native';
-import { act, cleanup, render, waitFor } from '@testing-library/react-native';
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react-native';
 import { auth } from '../config/firebase';
 import {
   AppProvider,
@@ -59,11 +59,9 @@ describe('AppSecurityAttackThrottler', () => {
 });
 
 describe('useAppContext hook', () => {
-  test('throws error when used outside of AppProvider', () => {
+  test('throws error when used outside of AppProvider', async () => {
     let capturedErr: any = null;
-    let didRun = false;
     const ComponentOutside = () => {
-      didRun = true;
       try {
         useAppContext();
       } catch (err: any) {
@@ -71,9 +69,12 @@ describe('useAppContext hook', () => {
       }
       return null;
     };
+
     render(<ComponentOutside />);
-    console.log('didRun:', didRun, 'capturedErr:', capturedErr);
-    expect(capturedErr?.message).toBe('useAppContext must be used within an AppProvider');
+
+    await waitFor(() => {
+      expect(capturedErr?.message).toBe('useAppContext must be used within an AppProvider');
+    });
   });
 });
 
@@ -83,12 +84,34 @@ describe('AppProvider Flow & Methods', () => {
   const Consumer: React.FC = () => {
     const ctx = useAppContext();
     latestContext = ctx;
-    return <Text testID="provider-ready">{ctx.loading ? 'loading' : 'ready'}</Text>;
+    return (
+      <Text testID="provider-ready">
+        {ctx.loading ? 'loading' : 'ready'} - vb:{ctx.vendorBookings?.length || 0} - uid:{ctx.userProfile?.id || 'none'}
+      </Text>
+    );
   };
 
   beforeEach(async () => {
     cleanup();
     jest.clearAllMocks();
+    latestContext = null as any;
+    (onSnapshot as jest.Mock).mockReset();
+    (onSnapshot as jest.Mock).mockImplementation((ref, callback) => {
+      if (callback) {
+        callback({ exists: () => true, data: () => ({}), forEach: jest.fn(), docs: [] });
+      }
+      return jest.fn();
+    });
+    (getDoc as jest.Mock).mockReset();
+    (getDoc as jest.Mock).mockImplementation(() => Promise.resolve({ exists: () => true, id: 'default_doc', data: () => ({}) }));
+    const defaultTrip = { id: 'trip_default', data: () => ({ title: 'Default Trip', status: 'published', packages: [{ price: 999 }] }) };
+    (getDocs as jest.Mock).mockImplementation(() => Promise.resolve({
+      empty: false,
+      docs: [defaultTrip],
+      forEach(cb: any) { this.docs.forEach(cb); },
+    }));
+    (GoogleSignin.signIn as jest.Mock).mockReset();
+    (GoogleSignin.signIn as jest.Mock).mockImplementation(() => Promise.resolve({ user: { email: 'test@example.com', name: 'Test User' }, idToken: 'mock-id-token' }));
     AppSecurityAttackThrottler.reset();
     await AsyncStorage.clear();
     global.fetch = jest.fn(() => Promise.resolve({ ok: true })) as any;
@@ -821,26 +844,24 @@ describe('AppProvider Flow & Methods', () => {
       await latestContext.loginWithGoogle('vendor');
     });
 
-    if (capturedNext) {
-      act(() => {
-        capturedNext({
-          forEach: (cb: any) => {
-            cb({ id: 'b_old', data: () => ({ createdAt: 100, travelerName: 'Old' }) });
-            cb({ id: 'b_new', data: () => ({ createdAt: 500, travelerName: 'New' }) });
-          },
-        });
+    await act(async () => {
+      capturedNext({
+        forEach: (cb: any) => {
+          cb({ id: 'b_old', data: () => ({ createdAt: 100, travelerName: 'Old' }) });
+          cb({ id: 'b_new', data: () => ({ createdAt: 500, travelerName: 'New' }) });
+        },
       });
-      expect(latestContext.vendorBookings[0]?.id).toBe('b_new');
-    }
+    });
+    await waitFor(() => expect(latestContext.vendorBookings.length).toBe(2));
+    expect(latestContext.vendorBookings[0]?.id).toBe('b_new');
 
     // Snapshot error callback
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    if (capturedErr) {
-      act(() => {
-        capturedErr(new Error('Snapshot permission denied'));
-      });
-      expect(consoleSpy).toHaveBeenCalledWith('Error loading vendor bookings:', expect.any(Error));
-    }
+    expect(capturedErr).toBeDefined();
+    await act(async () => {
+      capturedErr(new Error('Snapshot permission denied'));
+    });
+    expect(consoleSpy).toHaveBeenCalledWith('Error loading vendor bookings:', expect.any(Error));
     consoleSpy.mockRestore();
   });
 
@@ -864,9 +885,20 @@ describe('AppProvider Flow & Methods', () => {
       </AppProvider>
     );
 
-    await waitFor(() => expect(latestContext?.hasMoreTrips).toBe(true));
+    await waitFor(() => expect(latestContext?.loading).toBe(false));
 
-    // 1. fetchMoreTrips returns 0 docs -> setHasMoreTrips(false)
+    // 1. fetchMoreTrips error catch branch while hasMoreTrips is true
+    (getDocs as jest.Mock).mockRejectedValueOnce(new Error('Fetch more failed'));
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => {
+      await latestContext.fetchMoreTrips();
+    });
+
+    expect(consoleSpy).toHaveBeenCalledWith('Error fetching more trips:', expect.any(Error));
+    consoleSpy.mockRestore();
+
+    // 2. fetchMoreTrips returns 0 docs -> setHasMoreTrips(false)
     (getDocs as jest.Mock).mockResolvedValueOnce({
       empty: true,
       docs: [],
@@ -877,35 +909,13 @@ describe('AppProvider Flow & Methods', () => {
       await latestContext.fetchMoreTrips();
     });
 
-    expect(latestContext.hasMoreTrips).toBe(false);
-
-    // 2. fetchMoreTrips error catch
-    (getDocs as jest.Mock).mockResolvedValueOnce({
-      empty: false,
-      docs: mockTripList,
-      forEach(cb: any) {
-        this.docs.forEach(cb);
-      },
-    });
-    await act(async () => {
-      await latestContext.refreshTrips();
-    });
-
-    (getDocs as jest.Mock).mockRejectedValueOnce(new Error('Fetch more failed'));
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
-    await act(async () => {
-      await latestContext.fetchMoreTrips();
-    });
-
-    expect(consoleSpy).toHaveBeenCalledWith('Error fetching more trips:', expect.any(Error));
-    consoleSpy.mockRestore();
+    await waitFor(() => expect(latestContext.hasMoreTrips).toBe(false));
   });
 
-  test('covers loadSession doc not found and offline fallback', async () => {
+  test('covers loadSession doc not found', async () => {
     // 1. Cached profile but Firestore getDoc returns exists: false
     await AsyncStorage.setItem('userProfile', JSON.stringify({ id: 'vendor_cache_only', name: 'Cache Only', role: 'vendor' }));
-    (getDoc as jest.Mock).mockResolvedValueOnce({ exists: () => false });
+    (getDoc as jest.Mock).mockImplementationOnce(() => Promise.resolve({ exists: () => false }));
 
     render(
       <AppProvider>
@@ -916,9 +926,9 @@ describe('AppProvider Flow & Methods', () => {
     await waitFor(() => {
       expect(latestContext?.userProfile?.id).toBe('vendor_cache_only');
     });
+  });
 
-    cleanup();
-
+  test('covers loadSession offline fallback', async () => {
     // 2. Cached profile but Firestore getDoc throws (offline)
     const cachedProfile = { id: 'cached_offline_vendor', name: 'Offline Vendor', role: 'vendor' };
     await AsyncStorage.setItem('userProfile', JSON.stringify(cachedProfile));
@@ -933,9 +943,9 @@ describe('AppProvider Flow & Methods', () => {
     await waitFor(() => {
       expect(latestContext?.userProfile?.id).toBe('cached_offline_vendor');
     });
+  });
 
-    cleanup();
-
+  test('covers loadSession invalid JSON in AsyncStorage', async () => {
     // 3. Invalid JSON in AsyncStorage
     await AsyncStorage.setItem('userProfile', 'invalid{json');
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -973,7 +983,7 @@ describe('AppProvider Flow & Methods', () => {
       idToken: null,
     });
     (GoogleSignin.getTokens as jest.Mock).mockResolvedValueOnce({ idToken: 'token-from-gettokens' });
-    (getDoc as jest.Mock).mockResolvedValueOnce({ exists: () => false });
+    (getDoc as jest.Mock).mockImplementationOnce(() => Promise.resolve({ exists: () => false }));
 
     await act(async () => {
       await latestContext.loginWithGoogle('vendor');
@@ -1005,10 +1015,11 @@ describe('AppProvider Flow & Methods', () => {
       type: 'success',
       data: { user: { email: 'traveller_norole@test.com', name: 'No Role' }, idToken: 'token_norole' },
     });
-    (getDoc as jest.Mock).mockResolvedValueOnce({
+    (getDoc as jest.Mock).mockImplementationOnce(() => Promise.resolve({
       exists: () => true,
+      id: 'cred-1',
       data: () => ({ email: 'traveller_norole@test.com', name: 'No Role' }),
-    });
+    }));
 
     await act(async () => {
       await latestContext.loginWithGoogle('traveller');
@@ -1077,10 +1088,11 @@ describe('AppProvider Flow & Methods', () => {
       type: 'success',
       data: { user: { email: 'v_logout@test.com', name: 'Vendor Logout' }, idToken: 'token_logout' },
     });
-    (getDoc as jest.Mock).mockResolvedValueOnce({
+    (getDoc as jest.Mock).mockImplementationOnce(() => Promise.resolve({
       exists: () => true,
+      id: 'cred-1',
       data: () => ({ id: 'cred-1', role: 'vendor' }),
-    });
+    }));
 
     render(
       <AppProvider>
@@ -1102,7 +1114,7 @@ describe('AppProvider Flow & Methods', () => {
     });
 
     expect(mockUnsub).toHaveBeenCalled();
-    expect(latestContext.userProfile).toBeNull();
+    await waitFor(() => expect(latestContext.userProfile).toBeNull());
     expect(latestContext.vendorBookings).toEqual([]);
     consoleSpy.mockRestore();
   });
@@ -1181,8 +1193,9 @@ describe('AppProvider Flow & Methods', () => {
     AppSecurityAttackThrottler.reset();
 
     // 6. Duplicate booking submission lock
-    let resolveAddDoc: any;
-    (addDoc as jest.Mock).mockImplementationOnce(() => new Promise(res => { resolveAddDoc = res; }));
+    (addDoc as jest.Mock).mockImplementationOnce(() => new Promise(res => {
+      setTimeout(() => res({ id: 'b_resolved' }), 30);
+    }));
     (getDoc as jest.Mock).mockResolvedValueOnce({
       exists: () => true,
       data: () => ({ id: 'trip_dup', batches: [] }),
@@ -1202,7 +1215,6 @@ describe('AppProvider Flow & Methods', () => {
       seats: 1,
       totalPrice: 1000,
     });
-    if (resolveAddDoc) resolveAddDoc({ id: 'b_resolved' });
     await Promise.all([b1, b2]);
     expect(warnSpy).toHaveBeenCalledWith('Booking submission in progress, ignoring duplicate call.');
     warnSpy.mockRestore();

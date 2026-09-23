@@ -1,3 +1,4 @@
+global.IS_REACT_ACT_ENVIRONMENT = true;
 import '@testing-library/jest-native/extend-expect';
 import 'react-native';
 
@@ -152,4 +153,5 @@ jest.mock('firebase/auth', () => ({
 
 // Global test utilities
 global.__DEV__ = true;
+global.IS_REACT_ACT_ENVIRONMENT = true;
 
