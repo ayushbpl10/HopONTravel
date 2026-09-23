@@ -60,7 +60,8 @@ try {
     { file: 'README.md', minSize: 1000, keywords: ['verify:all', 'Vendor Onboarding', 'Architecture'] },
     { file: 'docs/VENDOR_ONBOARDING_GUIDE.md', minSize: 2000, keywords: ['AI WhatsApp Itinerary Importer', 'Live GPS Bus Radar', 'Passenger Manifests'] },
     { file: 'docs/PAYMENT_SETUP.md', minSize: 500, keywords: ['Razorpay'] },
-    { file: 'docs/MONETIZATION.md', minSize: 500, keywords: ['Commission'] }
+    { file: 'docs/MONETIZATION.md', minSize: 500, keywords: ['Commission'] },
+    { file: 'web/docs.html', minSize: 2000, keywords: ['Vendor Docs', 'AI WhatsApp', 'Live GPS Bus Radar', 'Captain Mode'] }
   ];
 
   let docsValid = true;

@@ -11,7 +11,8 @@ const filesToCheck = [
   { file: 'traveller.html', required: ['tab-bookings', 'tab-tracking', 'tab-wishlist', 'tab-profile', 'quickBookingIdInput', 'leafletMap'] },
   { file: 'vendor-portal.html', required: ['vtab-trips', 'vtab-bookings', 'vtab-settings', 'tripModalOverlay', 'aiModalOverlay', 'broadcastModalOverlay'] },
   { file: 'trip.html', required: ['tbBatchSelect', 'tbPackageSelect', 'tbSeatsInput', 'tbPriceDisplay', 'traveller.html'] },
-  { file: 'vendor.html', required: ['vendor-portal.html'] }
+  { file: 'vendor.html', required: ['vendor-portal.html'] },
+  { file: 'docs.html', required: ['docsSearch', 'quickstart', 'signin', 'publishing', 'ai-parser', 'gps-radar', 'manifests', 'mobile-app'] }
 ];
 
 let allPassed = true;
