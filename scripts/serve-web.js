@@ -210,6 +210,9 @@ const server = http.createServer((req, res) => {
 
   // 4. Static file handling
   let relativePath = urlPath === '/' ? 'index.html' : urlPath.replace(/^\//, '');
+  if (relativePath === 'docs' || relativePath === 'docs/') {
+    relativePath = 'docs.html';
+  }
   let filePath = path.join(WEB_DIR, relativePath);
 
   if (!filePath.startsWith(WEB_DIR)) {
