@@ -234,7 +234,9 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, {
       'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',
-      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups'
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      'X-Frame-Options': 'SAMEORIGIN',
+      'X-Content-Type-Options': 'nosniff'
     });
     fs.createReadStream(filePath).pipe(res);
   });
