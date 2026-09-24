@@ -210,10 +210,34 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 4. Static file handling
+  // 4. Static file & Dedicated Route handling
   let relativePath = urlPath === '/' ? 'index.html' : urlPath.replace(/^\//, '');
-  if (relativePath === 'docs' || relativePath === 'docs/') {
+
+  // Handle dedicated vendor routes: /vendor/:slug, /v/:slug
+  if (/^\/(vendor|v)\/([^/?#]+)/.test(urlPath)) {
+    const lastPart = urlPath.split('/').pop();
+    if (lastPart && (lastPart.endsWith('.css') || lastPart.endsWith('.js') || lastPart.endsWith('.png') || lastPart.endsWith('.jpg') || lastPart.endsWith('.jpeg') || lastPart.endsWith('.ico') || lastPart.endsWith('.webmanifest'))) {
+      relativePath = lastPart;
+    } else {
+      relativePath = 'vendor.html';
+    }
+  } else if (/^\/trip\/([^/?#]+)/.test(urlPath)) {
+    const lastPart = urlPath.split('/').pop();
+    if (lastPart && (lastPart.endsWith('.css') || lastPart.endsWith('.js') || lastPart.endsWith('.png') || lastPart.endsWith('.jpg') || lastPart.endsWith('.jpeg') || lastPart.endsWith('.ico'))) {
+      relativePath = lastPart;
+    } else {
+      relativePath = 'trip.html';
+    }
+  } else if (urlPath === '/vendor' || urlPath === '/vendor/') {
+    relativePath = 'vendor.html';
+  } else if (urlPath === '/trip' || urlPath === '/trip/') {
+    relativePath = 'trip.html';
+  } else if (urlPath === '/docs' || urlPath === '/docs/' || urlPath === 'docs') {
     relativePath = 'docs.html';
+  } else if (urlPath === '/traveller' || urlPath === '/traveller/') {
+    relativePath = 'traveller.html';
+  } else if (urlPath === '/vendor-portal' || urlPath === '/vendor-portal/') {
+    relativePath = 'vendor-portal.html';
   }
   let filePath = path.join(WEB_DIR, relativePath);
 

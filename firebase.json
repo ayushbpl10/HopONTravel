@@ -1,5 +1,39 @@
 {
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": "web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/vendor/**",
+        "destination": "/vendor.html"
+      },
+      {
+        "source": "/v/**",
+        "destination": "/vendor.html"
+      },
+      {
+        "source": "/trip/**",
+        "destination": "/trip.html"
+      },
+      {
+        "source": "/docs",
+        "destination": "/docs.html"
+      },
+      {
+        "source": "/traveller",
+        "destination": "/traveller.html"
+      },
+      {
+        "source": "/vendor-portal",
+        "destination": "/vendor-portal.html"
+      }
+    ]
   }
 }
