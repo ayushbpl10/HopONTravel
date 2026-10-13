@@ -11,7 +11,7 @@
  * 7. Security, Concurrency & E2E User Journey Verification
  */
 
-const { execSync, spawnSync } = require('child_process');
+const { execSync, spawnSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -262,7 +262,13 @@ try {
     });
     process.on('exit', () => {
       if (autoSpawnedServer) {
-        try { autoSpawnedServer.kill(); } catch (_) {}
+        try {
+          if (process.platform === 'win32') {
+            execSync(`taskkill /pid ${autoSpawnedServer.pid} /T /F`, { stdio: 'ignore' });
+          } else {
+            autoSpawnedServer.kill();
+          }
+        } catch (_) {}
       }
     });
     for (let i = 0; i < 20; i++) {
@@ -316,6 +322,7 @@ try {
   }
 
   console.log('  Running End-to-End User Journey Tests (11 flows)...');
+  spawnSync('node', ['-e', 'setTimeout(() => {}, 1500)']);
   const e2eProc = spawnSync('node', ['scripts/run-cdp-tests.js'], {
     cwd: ROOT_DIR,
     encoding: 'utf8',
@@ -351,7 +358,13 @@ for (const res of gateResults) {
 console.log(`${colors.bold}========================================================================${colors.reset}`);
 
 if (autoSpawnedServer) {
-  try { autoSpawnedServer.kill(); } catch (_) {}
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /pid ${autoSpawnedServer.pid} /T /F`, { stdio: 'ignore' });
+    } else {
+      autoSpawnedServer.kill();
+    }
+  } catch (_) {}
 }
 
 if (allGatesPassed) {

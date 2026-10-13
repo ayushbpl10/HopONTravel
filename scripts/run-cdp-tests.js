@@ -157,7 +157,11 @@ async function main() {
     // 1. Test Home Page
     await testFlow('Home Page: Loading & Elements', async () => {
       await client.send('Page.navigate', { url: 'http://127.0.0.1:8080/index.html' });
-      await sleep(1500);
+      for (let i = 0; i < 30; i++) {
+        await sleep(200);
+        const ready = await client.eval('Boolean(document.getElementById("langSelect") && document.getElementById("tripSearch"))');
+        if (ready) break;
+      }
 
       const title = await client.eval('document.title');
       if (!title.includes('Ab Toh Ghoom Le')) throw new Error(`Unexpected title: ${title}`);
