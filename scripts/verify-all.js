@@ -241,6 +241,39 @@ try {
 // GATE 6: MOBILE RESPONSIVENESS CDP AUDIT (ALL VIEWPORTS)
 // ============================================================================
 logHeader(6, 7, 'Mobile Responsiveness & Viewport Audit');
+
+// Auto-start web server if not already running on port 8080
+let autoSpawnedServer = null;
+try {
+  const isServerUp = () => {
+    try {
+      execSync('node -e "require(\'http\').get(\'http://127.0.0.1:8080/index.html\', () => process.exit(0)).on(\'error\', () => process.exit(1))"', { timeout: 1000 });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  if (!isServerUp()) {
+    console.log('  Starting local test server (scripts/serve-web.js) on port 8080...');
+    autoSpawnedServer = spawn('node', [path.join(ROOT_DIR, 'scripts', 'serve-web.js')], {
+      cwd: ROOT_DIR,
+      stdio: 'ignore'
+    });
+    process.on('exit', () => {
+      if (autoSpawnedServer) {
+        try { autoSpawnedServer.kill(); } catch (_) {}
+      }
+    });
+    for (let i = 0; i < 20; i++) {
+      spawnSync('node', ['-e', 'setTimeout(() => {}, 200)']);
+      if (isServerUp()) break;
+    }
+  }
+} catch (e) {
+  console.warn('  Web server auto-start warning:', e.message);
+}
+
 try {
   console.log('  Running Headless Chrome CDP responsive audit (iPhone 13, Galaxy S20, iPad Mini)...');
   const respProc = spawnSync('node', ['scripts/test-mobile-responsive.js'], {
@@ -316,6 +349,10 @@ for (const res of gateResults) {
 }
 
 console.log(`${colors.bold}========================================================================${colors.reset}`);
+
+if (autoSpawnedServer) {
+  try { autoSpawnedServer.kill(); } catch (_) {}
+}
 
 if (allGatesPassed) {
   console.log(`\n${colors.green}${colors.bold}🎉 ALL 7 QUALITY GATES PASSED COMPLETELY!${colors.reset}`);
