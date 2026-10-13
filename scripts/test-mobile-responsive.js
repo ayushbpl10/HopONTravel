@@ -95,7 +95,28 @@ class CDPClient {
 
   async navigate(url) {
     await this.send('Page.navigate', { url });
-    await sleep(1500);
+    for (let i = 0; i < 30; i++) {
+      await sleep(150);
+      try {
+        const ready = await this.eval('document.readyState');
+        if (ready === 'complete') {
+          await sleep(250);
+          return;
+        }
+      } catch (_) {}
+    }
+  }
+
+  async waitForFunction(fnName, timeoutMs = 8000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const exists = await this.eval(`typeof ${fnName} === 'function'`);
+        if (exists) return true;
+      } catch (_) {}
+      await sleep(150);
+    }
+    throw new Error(`Timeout waiting for function ${fnName} to be defined`);
   }
 
   async screenshot(filepath) {
@@ -183,6 +204,7 @@ async function runMobileAudit() {
     // --- TEST 1: Traveller Portal Logged-Out ---
     console.log('\n[1] Traveller Portal (Logged Out)');
     await client.navigate('http://localhost:8080/traveller.html');
+    await client.waitForFunction('loginAsDemoTraveller');
     await client.eval(`localStorage.clear(); if (typeof onUserSignedOut === 'function') onUserSignedOut();`);
     await sleep(400);
 
@@ -199,6 +221,7 @@ async function runMobileAudit() {
 
     // --- TEST 2: Traveller Portal Demo Account Logged-In ---
     console.log('\n[2] Traveller Portal (Demo Account Logged In)');
+    await client.waitForFunction('loginAsDemoTraveller');
     await client.eval(`loginAsDemoTraveller()`);
     await sleep(600);
 
@@ -248,6 +271,7 @@ async function runMobileAudit() {
     // --- TEST 3: Vendor Portal Logged-Out ---
     console.log('\n[3] Vendor Portal (Logged Out)');
     await client.navigate('http://localhost:8080/vendor-portal.html');
+    await client.waitForFunction('loginAsDemoVendor');
     await client.eval(`localStorage.clear(); if (typeof onVendorSignedOut === 'function') onVendorSignedOut();`);
     await sleep(400);
 
@@ -256,6 +280,7 @@ async function runMobileAudit() {
 
     // --- TEST 4: Vendor Portal Demo Organiser Logged-In ---
     console.log('\n[4] Vendor Portal (Demo Organiser Logged In)');
+    await client.waitForFunction('loginAsDemoVendor');
     await client.eval(`loginAsDemoVendor()`);
     await sleep(600);
 
@@ -270,6 +295,7 @@ async function runMobileAudit() {
 
     // Test Create Trip Modal on mobile
     console.log('\n[5] Vendor Portal Modals on Mobile');
+    await client.waitForFunction('openCreateTripModal');
     await client.eval(`openCreateTripModal()`);
     await sleep(500);
 
